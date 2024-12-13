@@ -6,3 +6,8 @@ venv/
 
 # Ignore Python bytecode and __pycache__ directories
 __pycache__/
+
+#ignore csvs
+Usernames.csv
+High_elo_Usernames.csv
+Match_Data.csv
