@@ -1,89 +1,40 @@
-import requests
 import pandas as pd
-import time
 import sqlite3
 import random
 import db_functions
+import json
+import threading
+import time
 
 
-API_KEY = 'RGAPI-03b47d82-711b-4272-ad48-bd7a9a8d6c76'
+API_KEY = 'RGAPI-99a4aa29-682c-4887-bf3f-042d7013b1e2'
 sleep = 0
 games = 0
 append = 0
-data = []
-
-def replace_data(data):
-
-    #creating frame for data
-    df = pd.json_normalize(data[0])
-
-    for i in range(1,len(data)):
-        df_temp = pd.json_normalize(data[i])
-        df = pd.concat([df, df_temp])
-
-    del df['legendaryItemUsed']
-
-    connection = sqlite3.connect('lol_database.db')
-
-    query = 'SELECT * FROM Match_Data'
-
-    df_old = pd.read_sql_query(query, connection)
-
-    df = pd.concat([df,df_old])
-    print(df.shape)
-
-    df.to_sql('Match_Data', connection, if_exists='replace', index=False)
-
-    connection.close()
-
-def append_data(data):
-
-    df = pd.json_normalize(data[0])
-
-    for i in range(1,len(data)):
-        df_temp = pd.json_normalize(data[i])
-        df = pd.concat([df, df_temp])
-
-    del df['legendaryItemUsed']
-
-    for col in df.columns:
-        if 'SWARM' in col:
-            df.pop(col)
-
-    connection = sqlite3.connect('lol_database.db')
-
-    df.to_sql('Match_Data', connection, if_exists='append', index=False)
-
-    '''
-    cursor = connection.cursor()
-    cursor.execute('SELECT * FROM Match_Data')
-    rows = cursor.fetchall()
-    print(len(rows))
-    '''
-
-    connection.close()
+temp_data = []
 
 
 #load username database with only diamond and emerald players
 connection = sqlite3.connect('lol_database.db')
+connection.row_factory = sqlite3.Row
 cursor = connection.cursor()
-cursor.execute('SELECT * FROM Usernames WHERE tier IN ?',('DIAMOND'))
+cursor.execute('SELECT * FROM High_elo_Usernames WHERE tier = ?',('GRANDMASTER',))
 rows = cursor.fetchall()
 connection.close()
 
 
-while games < 20000:
+while games < 100:
 
     if append >= 1000:
-        append_data(data)
+        thread = db_functions.send_json(temp_data)
         print('memory cleared')
-        data = []
+        temp_data = []
         append = 0
     
     
     #select random player
     rand_summ = random.randrange(0, (len(rows)-1))
-    puuid = rows[rand_summ][12]
+    puuid = rows[rand_summ]['puuid']
 
     #fetch matchIDS
     matchIds = db_functions.matches(puuid, API_KEY)
@@ -99,17 +50,17 @@ while games < 20000:
             if match_data['info']['gameDuration'] == 0:
                 continue
             
-            #parsing json into 10 players and adding it to data list
-            for player in match_data['info']['participants']:
+            #adding player rank/tier to json
+            match_data['tier'] = rows[rand_summ]['tier']
+            match_data['rank'] = rows[rand_summ]['rank']
 
-                player['matchId'] = matchId
-                player['gameMode'] = match_data['info']['gameMode']
+            temp_data.append(match_data)
 
-                data.append(player)
-            
             #tracking total games added and games added before last append
             games +=1
             append +=1
+            print(games)
+
         #remove player from randomized list
         del rows[rand_summ]
 
@@ -127,7 +78,9 @@ while games < 20000:
         del rows[rand_summ]
         continue
 
-append_data(data)
+thread = db_functions.send_json(temp_data)
+
+thread.join()
 
 '''
 connection = sqlite3.connect('lol_database.db')
