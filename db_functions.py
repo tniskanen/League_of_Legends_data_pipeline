@@ -61,7 +61,7 @@ def matches(puuid,key):
 
         #requesting match Ids
         url = ('https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/'
-                            +puuid+'/ids?type=ranked&start=0&count=20&api_key='+key)
+                            +puuid+'/ids?type=ranked&start=0&count=1&api_key='+key)
         response = requests.get(url)
         matchIds = response.json()
 
@@ -101,43 +101,6 @@ def data(id,key):
             break
     return(match_data)
 
-
-#no rate limit issue because there is only 1 request
-def grandmasters(key):
-    response = requests.get('https://na1.api.riotgames.com/lol/league/v4/grandmasterleagues/by-queue/' + 
-                            'RANKED_SOLO_5x5?api_key=' + key)
-    summoners = response.json()
-    return(summoners)
-
-
-#no rate limit issue because there is only 1 request
-def masters(key):
-    response = requests.get('https://na1.api.riotgames.com/lol/league/v4/masterleagues/by-queue/' + 
-                            'RANKED_SOLO_5x5?api_key='+key)
-    summoners = response.json()
-    return(summoners)
-
-
-def puuid(summoner_id, key):
-    while True:
-        response = requests.get('https://na1.api.riotgames.com/lol/summoner/v4/summoners/'+
-                                summoner_id+'?api_key='+key)
-        player = response.json()
-
-        try:
-
-            #fix rate limit error
-            if player['status']['status_code'] == 429:
-                time.sleep(120)
-
-            #other error that cant be handled with this function
-            else:
-                break
-
-        #keyError because working with dictionaries
-        except KeyError:
-            break
-    return(player['puuid']) 
 
 def upload_to_s3(bucket, key, data):
     try:
