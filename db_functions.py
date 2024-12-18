@@ -8,12 +8,60 @@ import json
 import threading
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError, ClientError
 
+def champion_mastery(puuid,championid,key):
+    while True:
+        url = ('https://na1.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/' + puuid +
+               '/by-champion/' + str(championid) +'?api_key=' + key)
+        reponse = requests.get(url)
+        mastery = reponse.json()
+
+        #check for rate limit
+        try:
+            if mastery['status']['status_code'] == 429:
+                time.sleep(120)
+
+            #if no information for a champion, assume there is no mastery
+            elif mastery['status']['status_code'] == 404:
+                mastery = {
+                    'championLevel': 0,
+                    'championPoints':0,
+                }
+                break
+        
+        #keyError because 'status' wont be in dictionary
+        except KeyError:
+
+            break
+
+    return mastery
+
+def summoner_level(puuid,key):
+    while True:
+        url = ('https://na1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/' + puuid + '?api_key=' + key)
+        reponse = requests.get(url)
+        summoner_info = reponse.json()
+
+        #check for rate limit
+        try:
+            if summoner_info['status']['status_code'] == 429:
+                time.sleep(120)
+
+            #if a status code exists thats not rate limit return
+            else:
+                break
+        
+        #keyError because 'status' wont be in dictionary
+        except KeyError:
+            break
+
+    return summoner_info
+
 def matches(puuid,key):
     while True:
 
         #requesting match Ids
         url = ('https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/'
-                            +puuid+'/ids?type=ranked&start=0&count=100&api_key='+key)
+                            +puuid+'/ids?type=ranked&start=0&count=20&api_key='+key)
         response = requests.get(url)
         matchIds = response.json()
 
