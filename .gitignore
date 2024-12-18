@@ -11,3 +11,10 @@ __pycache__/
 Usernames.csv
 High_elo_Usernames.csv
 Match_Data.csv
+
+#tempcoderunners
+tempCodeRunnerFile.py 
+tempCodeRunnerFile.python 
+
+#old db
+lol_database.db
