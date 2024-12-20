@@ -18,3 +18,10 @@ tempCodeRunnerFile.python
 
 #old db
 lol_database.db
+
+#error log
+api_errors.log
+
+#local json data
+data.json
+perksTest.csv

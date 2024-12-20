@@ -8,20 +8,20 @@ import time
 import logging
 
 logging.basicConfig(level=logging.INFO, filename='api_errors.log')
-API_KEY = 'RGAPI-965e7112-946d-4c9e-9d3e-d1a3d53f4432'
+API_KEY = 'RGAPI-9b8dad18-0750-4bb8-af77-f8918f8185a3'
 games = 0
 append = 0
 temp_data = []
 
 
-while games < 20000:
+while games <= 10000:
 
-    if append >= 1000:
+    if append >= 100:
         thread = db_functions.send_json(temp_data)
         print('memory cleared')
         temp_data = []
         append = 0
-    
+
     #check for response errors, looping using indexing to catch dictionaries
     #because matchIds should be lists
     try:

@@ -39,20 +39,8 @@ def rank_and_id(key):
 
     try:
         #check if rank it above diamond because those ranks have differnt api requests
-        if rank[0][0] == 'CHALLENGER':
-            summoners = challenger(key)
-            summoner = random_select_player(summoners['entries'],key)
-            puuid = summoner['puuid']
-            rank.append(puuid)
-
-        if rank[0][0] == 'GRANDMASTER':
-            summoners = grandmasters(key)
-            summoner = random_select_player(summoners['entries'],key)
-            puuid = summoner['puuid']
-            rank.append(puuid)
-
-        if rank[0][0] == 'MASTER':
-            summoners = masters(key)
+        if rank[0][0] in ['CHALLENGER', 'GRANDMASTER', 'MASTER']:
+            summoners = highElo(rank[0][0], key)
             summoner = random_select_player(summoners['entries'],key)
             puuid = summoner['puuid']
             rank.append(puuid)
@@ -68,20 +56,26 @@ def rank_and_id(key):
     
     except KeyError:
         return rank
+    
+    except ValueError:
+        return rank
 
 
 ## API REQUESTS FOR LIST OF SUMMONERS BY LEAGUES 
-def grandmasters(key,retries=3):
+def highElo(tier,key,retries=3):
     
     #recursion limit
     if retries <= 0:
         logging.error(f"Error {summoners['status']['status_code']}: {summoners['status']['message']} From url: {url}")
         return(summoners)
     
-    url = ('https://na1.api.riotgames.com/lol/league/v4/grandmasterleagues/by-queue/' + 
-                            'RANKED_SOLO_5x5?api_key=' + key)
-    response = requests.get(url)
-    summoners = response.json()
+    try:
+        url = ('https://na1.api.riotgames.com/lol/league/v4/'+ tier.lower() +'leagues/by-queue/' + 
+                                'RANKED_SOLO_5x5?api_key=' + key)
+        response = requests.get(url)
+        summoners = response.json()
+    except requests.exceptions.RequestException as e:
+        logging.error(f"An error occurred: {e}", exc_info=True)
 
     #check for response errors
     try:
@@ -89,68 +83,13 @@ def grandmasters(key,retries=3):
         #rate limit and server errors
         if summoners['status']['status_code'] >= 429:
             time.sleep(120)
-            return(grandmasters(key,retries-1))
+            return(highElo(key,retries-1))
         
         #client errors
         if summoners['status']['status_code'] <= 415:
             logging.error(f"Error {summoners['status']['status_code']}: {summoners['status']['message']} From url: {url}")
             return(summoners)
 
-    #keyError because working with dictionaries
-    except KeyError:
-        return(summoners)
-
-def masters(key,retries=3):
-    
-    #recursion limit
-    if retries <= 0:
-        logging.error(f"Error {summoners['status']['status_code']}: {summoners['status']['message']} From url: {url}")
-        return(summoners)
-    
-    url = ('https://na1.api.riotgames.com/lol/league/v4/masterleagues/by-queue/' + 
-            'RANKED_SOLO_5x5?api_key='+key)
-    response = requests.get(url)
-    summoners = response.json()
-    try:
-
-        #server or rate limit error
-        if summoners['status']['status_code'] >= 429:
-            time.sleep(120)
-            return(masters(key,retries-1))
-
-        #client error
-        if summoners['status']['status_code'] <= 415:
-            logging.error(f"Error {summoners['status']['status_code']}: {summoners['status']['message']} From url: {url}")
-            return(summoners)
-
-    #keyError because working with dictionaries
-    except KeyError:
-        return(summoners)
-
-
-def challenger(key,retries=3):
-    
-    #recursion limit
-    if retries <= 0:
-        logging.error(f"Error {summoners['status']['status_code']}: {summoners['status']['message']} From url: {url}")
-        return(summoners)
-    
-    url = ('https://na1.api.riotgames.com/lol/league/v4/challengerleagues/by-queue/' + 
-                            'RANKED_SOLO_5x5?api_key='+key)
-    response = requests.get(url)
-    summoners = response.json()
-    try:
-
-        #server error
-        if summoners['status']['status_code'] >= 429:
-            time.sleep(120)
-            return(challenger(key,retries-1))
-
-        #client error
-        if summoners['status']['status_code'] <= 415:
-            logging.error(f"Error {summoners['status']['status_code']}: {summoners['status']['message']} From url: {url}")
-            return(summoners)
-        
     #keyError because working with dictionaries
     except KeyError:
         return(summoners)
@@ -188,10 +127,13 @@ def tier_division(tier,division,key,retries=5):
         case 'IRON':
             page = random.randrange(1,167)
 
-    url = ('https://na1.api.riotgames.com/lol/league/v4/entries/RANKED_SOLO_5x5/'+ tier + '/' +
-                            division + '?page='+ str(page) +'&api_key='+ key)
-    response = requests.get(url)
-    summoners = response.json()
+    try:
+        url = ('https://na1.api.riotgames.com/lol/league/v4/entries/RANKED_SOLO_5x5/'+ tier + '/' +
+                                division + '?page='+ str(page) +'&api_key='+ key)
+        response = requests.get(url)
+        summoners = response.json()
+    except requests.exceptions.RequestException as e:
+        logging.error(f"An error occurred: {e}", exc_info=True)
     try:
 
         #check for empty list of summoners
@@ -228,10 +170,13 @@ def get_puuid(summoner_id, key,retries=3):
         logging.error(f"Error {player['status']['status_code']}: {player['status']['message']} From url: {url}")
         return(player)
     
-    url = ('https://na1.api.riotgames.com/lol/summoner/v4/summoners/'+
-            summoner_id+'?api_key='+key)
-    response = requests.get(url)
-    player = response.json()
+    try:
+        url = ('https://na1.api.riotgames.com/lol/summoner/v4/summoners/'+
+                summoner_id+'?api_key='+key)
+        response = requests.get(url)
+        player = response.json()
+    except requests.exceptions.RequestException as e:
+        logging.error(f"An error occurred: {e}", exc_info=True)
 
     #catching response errors 
     try:

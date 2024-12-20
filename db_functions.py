@@ -8,6 +8,7 @@ import json
 import threading
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError, ClientError
 import logging
+import os
 
 logging.basicConfig(level=logging.INFO, filename='api_errors.log')
 
@@ -23,11 +24,13 @@ def champion_mastery(puuid, championid, key, retries=3):
         print("server error from champion mastery request")
         return error_info
     
-    
-    url = ('https://na1.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/' + puuid +
-            '/by-champion/' + str(championid) +'?api_key=' + key)
-    reponse = requests.get(url)
-    mastery = reponse.json()
+    try:
+        url = ('https://na1.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/' + puuid +
+                '/by-champion/' + str(championid) +'?api_key=' + key)
+        reponse = requests.get(url)
+        mastery = reponse.json()
+    except requests.exceptions.RequestException as e:
+        logging.error(f"An error occurred: {e}", exc_info=True)
 
     #check for response errors
     try:
@@ -64,9 +67,12 @@ def summoner_level(puuid, key, retries=3):
         print("server error from summoner info request")
         return error_info
         
-    url = ('https://na1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/' + puuid + '?api_key=' + key)
-    reponse = requests.get(url)
-    summoner_info = reponse.json()
+    try:
+        url = ('https://na1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/' + puuid + '?api_key=' + key)
+        reponse = requests.get(url)
+        summoner_info = reponse.json()
+    except requests.exceptions.RequestException as e:
+        logging.error(f"An error occurred: {e}", exc_info=True)
 
     #check for response errors
     try:
@@ -99,10 +105,13 @@ def matches(puuid,key,retries=3):
         return matchIds
     
     #requesting match Id for 1 game
-    url = ('https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/'
-                        +puuid+'/ids?type=ranked&start=0&count=1&api_key='+key)
-    response = requests.get(url)
-    matchIds = response.json()
+    try:
+        url = ('https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/'
+                            +puuid+'/ids?type=ranked&start=0&count=1&api_key='+key)
+        response = requests.get(url)
+        matchIds = response.json()
+    except requests.exceptions.RequestException as e:
+        logging.error(f"An error occurred: {e}", exc_info=True)
 
     #check for response errors
     try:
@@ -127,11 +136,14 @@ def data(id,key,retries=3):
         logging.error(f"Error {match_data['status']['status_code']}: {match_data['status']['message']} From url: {url}")
         return(match_data)
 
+    try:
     #request match data
-    url = ('https://americas.api.riotgames.com/lol/match/v5/matches/'+
-            id +'?api_key=' + key)
-    response = requests.get(url)
-    match_data = response.json()
+        url = ('https://americas.api.riotgames.com/lol/match/v5/matches/'+
+                id +'?api_key=' + key)
+        response = requests.get(url)
+        match_data = response.json()
+    except requests.exceptions.RequestException as e:
+        logging.error(f"An error occurred: {e}", exc_info=True)
 
     #check for response errors
     try:
@@ -184,3 +196,10 @@ def send_json(data):
 
     print("JSON upload is happening in the background...")
     return upload_thread
+
+###SAVING JSON LOCALLY TO TEST LAMBDA ETL
+def save_json(data):
+    file_path = os.path.join(os.getcwd(), 'data.json') 
+    with open(file_path, 'w') as json_file:
+        json.dump(data,json_file)
+    print('complete')
