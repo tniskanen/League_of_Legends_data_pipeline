@@ -5,8 +5,9 @@ import weighted_random_usernames
 import json
 import threading
 import time
+import logging
 
-
+logging.basicConfig(level=logging.INFO, filename='api_errors.log')
 API_KEY = 'RGAPI-965e7112-946d-4c9e-9d3e-d1a3d53f4432'
 games = 0
 append = 0
@@ -21,17 +22,15 @@ while games < 20000:
         temp_data = []
         append = 0
     
-    
-    #select random player
-    rank_and_Id = weighted_random_usernames.rank_and_id(API_KEY)
-    puuid = rank_and_Id[1]
-
-    #fetch matchIDS
-    matchId = db_functions.matches(puuid, API_KEY)
-
     #check for response errors, looping using indexing to catch dictionaries
     #because matchIds should be lists
     try:
+        #select random player
+        rank_and_Id = weighted_random_usernames.rank_and_id(API_KEY)
+        puuid = rank_and_Id[1]
+
+        #fetch matchID
+        matchId = db_functions.matches(puuid, API_KEY)
         
         match_data = db_functions.data(matchId[0], API_KEY)
 
@@ -43,23 +42,32 @@ while games < 20000:
         match_data['tier'] = rank_and_Id[0][0]
         match_data['division'] = rank_and_Id[0][1]
 
-        #adding summoner level and champion mastery to each participant 
-        for player in match_data['info']['participants']:
+        #try block to catch missing summoner or mastery data, without restarting pipeline
+        try:
 
-            #temporary IDs for summoner and mastery requests
-            temp_puuid = player['puuid']
-            temp_champ_ID = player['championId']
+            #adding summoner level and champion mastery to each participant 
+            for player in match_data['info']['participants']:
 
-            #summoner level and last time the summoner level was revised 
-            summoner_info = db_functions.summoner_level(temp_puuid, API_KEY)
-            player['summonerLevel'] = summoner_info['summonerLevel']
-            player['summonerLevelRevisionDate'] = summoner_info['revisionDate']
+                #temporary IDs for summoner and mastery requests
+                temp_puuid = player['puuid']
+                temp_champ_ID = player['championId']
 
-            #add champion mastery by level and points
-            mastery = db_functions.champion_mastery(temp_puuid,temp_champ_ID,API_KEY)
-            player['masteryLevel'] = mastery['championLevel']
-            player['masteryPoints'] = mastery['championPoints']
-        
+                #summoner level and last time the summoner level was revised 
+                summoner_info = db_functions.summoner_level(temp_puuid, API_KEY)
+                player['summonerLevel'] = summoner_info['summonerLevel']
+                player['summonerLevelRevisionDate'] = summoner_info['revisionDate']
+
+                #add champion mastery by level and points
+                mastery = db_functions.champion_mastery(temp_puuid,temp_champ_ID,API_KEY)
+                player['masteryLevel'] = mastery['championLevel']
+                player['masteryPoints'] = mastery['championPoints']
+
+        except KeyError:
+            #this error should only be catching problems with player["puuid"] and player["championId"]
+            print('keyError')
+            logging.error(f"Error parsing match {matchId}")
+            continue
+
         temp_data.append(match_data)
 
         #tracking total games added and games added before last append
@@ -67,18 +75,27 @@ while games < 20000:
         append +=1
         print(games)
 
-
-    #exception for dictionary indexing for MATCH DATA (data request)
-    except KeyError:
-        print('keyError')
-        print(match_data)
+    #exception for rank_and_id where puuid wasnt appended to rank
+    #error will be caught initializing puuid variable
+    except IndexError:
         continue
 
-    #exception for list indexing for MATCH IDs (matches request) 
+    #exception for incorrect key when parsing match_data from data() function
+    except KeyError:
+        print('keyError')
+        continue
+
+    #unsure why i added this  
     except ValueError:
         print(matchId['status']['status_code'])
         print(matchId['status']['message'])
         continue
+
+    #exception for providing key to list matchId from matches() function 
+    except TypeError:
+        print('TypeError')
+        continue
+
 
 thread = db_functions.send_json(temp_data)
 

@@ -7,99 +7,148 @@ import boto3
 import json
 import threading
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError, ClientError
+import logging
 
-def champion_mastery(puuid,championid,key):
-    while True:
-        url = ('https://na1.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/' + puuid +
-               '/by-champion/' + str(championid) +'?api_key=' + key)
-        reponse = requests.get(url)
-        mastery = reponse.json()
+logging.basicConfig(level=logging.INFO, filename='api_errors.log')
 
-        #check for rate limit
-        try:
-            if mastery['status']['status_code'] == 429:
-                time.sleep(120)
+def champion_mastery(puuid, championid, key, retries=3):
 
-            #if no information for a champion, assume there is no mastery
-            elif mastery['status']['status_code'] == 404:
-                mastery = {
-                    'championLevel': 0,
-                    'championPoints':0,
-                }
-                break
+    #recursive limit
+    if retries <= 0:
+        error_info = {
+            "championLevel": "Error" + str(mastery['status']['status_code']),
+            "championPoints": "Error" + str(mastery['status']['status_code'])
+        }
+        logging.error(f"Error {mastery['status']['status_code']}: {mastery['status']['message']} From url: {url}")
+        print("server error from champion mastery request")
+        return error_info
+    
+    
+    url = ('https://na1.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/' + puuid +
+            '/by-champion/' + str(championid) +'?api_key=' + key)
+    reponse = requests.get(url)
+    mastery = reponse.json()
+
+    #check for response errors
+    try:
+        #check for rate limit and server errors (500-504)
+        if mastery['status']['status_code'] >= 429:
+            time.sleep(120)
+            print("retrying mastery request")
+            return(champion_mastery(puuid,championid,key,retries-1))
+
+        #check for client errors or unsupported media errors
+        if mastery['status']['status_code'] <= 415:
+            error_info = {
+                'championLevel': "Error" + str(mastery['status']['status_code']),
+                'championPoints': "Error" + str(mastery['status']['status_code'])
+            }
+            print("client error from mastery request")
+            logging.error(f"Error {mastery['status']['status_code']}: {mastery['status']['message']} From url: {url}")
+            return error_info
+    
+    #keyError because 'status' wont be in dictionary
+    except KeyError:
+        return mastery
+
+
+def summoner_level(puuid, key, retries=3):
+
+    #recursive limit
+    if retries <= 0:
+        error_info = {
+            "summonerLevel": "Error" + str(summoner_info['status']['status_code']),
+            "revisionDate": "Error" + str(summoner_info['status']['status_code'])
+        }
+        logging.error(f"Error {summoner_info['status']['status_code']}: {summoner_info['status']['message']} From url: {url}")
+        print("server error from summoner info request")
+        return error_info
         
-        #keyError because 'status' wont be in dictionary
-        except KeyError:
+    url = ('https://na1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/' + puuid + '?api_key=' + key)
+    reponse = requests.get(url)
+    summoner_info = reponse.json()
 
-            break
-
-    return mastery
-
-def summoner_level(puuid,key):
-    while True:
-        url = ('https://na1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/' + puuid + '?api_key=' + key)
-        reponse = requests.get(url)
-        summoner_info = reponse.json()
-
-        #check for rate limit
-        try:
-            if summoner_info['status']['status_code'] == 429:
-                time.sleep(120)
-
-            #if a status code exists thats not rate limit return
-            else:
-                break
+    #check for response errors
+    try:
+        #check for rate limit errors or 500-504 server errors
+        if summoner_info['status']['status_code'] >= 429:
+            time.sleep(120)
+            print("retrying summoner information request")
+            return(summoner_level(puuid,key, retries-1))
         
-        #keyError because 'status' wont be in dictionary
-        except KeyError:
-            break
+        #check for client errors, or unathorized requests
+        if summoner_info['status']['status_code'] <= 415:
+            error_info = {
+            "summonerLevel": "Error" + str(summoner_info['status']['status_code']),
+            "revisionDate": "Error" + str(summoner_info['status']['status_code'])
+            }
+            logging.error(f"Error {summoner_info['status']['status_code']}: {summoner_info['status']['message']} From url: {url}")
+            print("client error from summoner info request")
+            return error_info
 
-    return summoner_info
+    #keyError because 'status' wont be in dictionary
+    except KeyError:
+        return summoner_info
 
-def matches(puuid,key):
-    while True:
 
-        #requesting match Ids
-        url = ('https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/'
-                            +puuid+'/ids?type=ranked&start=0&count=1&api_key='+key)
-        response = requests.get(url)
-        matchIds = response.json()
+def matches(puuid,key,retries=3):
 
-        #if rate limit exceeded, sleep and re-try request
-        try:
-            if matchIds['status']['status_code'] == 429:
-                time.sleep(120)
-            
-            #if a status code exists thats not rate limit return
-            else:
-                break
+    #recursive limit
+    if retries <= 0:
+        logging.error(f"Error {matchIds['status']['status_code']}: {matchIds['status']['message']} From url: {url}")
+        return matchIds
+    
+    #requesting match Id for 1 game
+    url = ('https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/'
+                        +puuid+'/ids?type=ranked&start=0&count=1&api_key='+key)
+    response = requests.get(url)
+    matchIds = response.json()
 
-        #type error because working with lists
-        except TypeError:
-            break
+    #check for response errors
+    try:
+        #server errors/limit rate error
+        if matchIds['status']['status_code'] >= 429:
+            time.sleep(120)
+            return(matches(puuid,key,retries-1))
         
-    return(matchIds)  
+        #client errors
+        if matchIds['status']['status_code'] <= 415:
+            logging.error(f"Error {matchIds['status']['status_code']}: {matchIds['status']['message']} From url: {url}")
+            return(matchIds)
         
-def data(id,key):
-    while True:
-        #request match data
-        response = requests.get('https://americas.api.riotgames.com/lol/match/v5/matches/'+
-                                id +'?api_key=' + key)
-        match_data = response.json()
+    #type error because working with lists
+    except TypeError:
+            return(matchIds) 
+        
+def data(id,key,retries=3):
+    
+    #recursive limit
+    if retries <= 0:
+        logging.error(f"Error {match_data['status']['status_code']}: {match_data['status']['message']} From url: {url}")
+        return(match_data)
 
-        #if rate limit exceeded, sleep
-        try:
-            if match_data['status']['status_code'] == 429:
-                time.sleep(120)
-                
-            #if a status code exists thats not rate limit return
-            else:
-                break
+    #request match data
+    url = ('https://americas.api.riotgames.com/lol/match/v5/matches/'+
+            id +'?api_key=' + key)
+    response = requests.get(url)
+    match_data = response.json()
 
-        #keyError because working with dictionaries
-        except KeyError:
-            break
-    return(match_data)
+    #check for response errors
+    try:
+        #server and rate limit errors
+        if match_data['status']['status_code'] >= 429:
+            time.sleep(120)
+            return(data(id,key,retries-1))
+
+        #client errors
+        if match_data['status']['status_code'] <= 415:
+            logging.error(f"Error {match_data['status']['status_code']}: {match_data['status']['message']} From url: {url}")
+            return(match_data)
+
+    #keyError because working with dictionaries
+    except KeyError:
+        return(match_data)
+
 
 
 def upload_to_s3(bucket, key, data):
