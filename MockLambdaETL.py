@@ -1,58 +1,64 @@
 import json
 import pandas as pd
 from pandas import json_normalize
+from collections import deque
 
 def lambda_handler(event, context):
     # TODO implement
 
-    statPerks = json_normalize(event[0]['info']['participants'][0]['perks']['statPerks'], sep='_')
-    
-    styles = json_normalize(event[0]['info']['participants'][0]['perks']['styles'], 
-                            record_path=['selections'],
-                            meta=['description','style'],  # Include the 'style' information as meta
-                            sep='_'
-                            )
-    
-    player_info = {
-    "player_id": '36',
-    "name": 'john doe'
-    }
+    flattened_data = []
 
-    # Flattened statperks into the base player info
-    flat_data = {**player_info, **statPerks.to_dict(orient='records')[0]}
+    for game in event:
+        for player in game['info']['participants']:
+            temp_player = flatten_json(player)
 
-    final_data = []
-    for idx, row in styles.iterrows():
-        flat_data.update(row.to_dict())
-        final_data.append(flat_data.copy())
+            temp_player['tier'] = game['tier']
+            temp_player['division'] = game['division']
 
-    df = pd.DataFrame(final_data)
-    df.to_csv('perksTest.csv',index=False)
+            temp_player['dataVersion'] = game['metadata']['dataVersion']
+            temp_player['matchId'] = game['metadata']['matchId']
 
-    
+            temp_player['gameCreation'] = game['info']['gameCreation']
+            temp_player['gameDuration'] = game['info']['gameDuration']
+            temp_player['gameVersion'] = game['info']['gameVersion']
+            temp_player['mapId'] = game['info']['mapId']
 
-    '''
-    playerList = []
-    playerData = event[0]['info']['participants']
-    for player in playerData:
-        playerList.append(json_normalize(player))
+            flattened_data.append(temp_player)
 
-    playerDF = pd.DataFrame(playerList)
-    playerDF.to_csv('player.csv', index=False)
+    df = pd.DataFrame(flattened_data)
+    df.to_csv('Test.csv',index=False)
 
-    gameData = event[0]
-    del gameData['info']['participants']
-    gameDF = json_normalize(gameData)
-    gameDF.to_csv('game.csv', index=False)
-    '''
 
     return {
         'statusCode': 200,
         'body': json.dumps('Hello from Lambda!')
     }
 
-def flatten_json():
-    return
+def flatten_json(nested_json):
+    """Flatten the JSON into a single level (row)."""
+    out = {}  # This will hold the flattened result
+    queue = deque([((), nested_json)])  # Initialize a queue with the root of the JSON structure
+
+    while queue:  # Loop through the queue until it's empty
+        path, current = queue.popleft()  # Get the current path and data from the queue
+
+        # If the current element is a dictionary:
+        if isinstance(current, dict):
+            for key, value in current.items():
+                new_path = path + (key,)  # Create a new path by appending the current key
+                queue.append((new_path, value))  # Add the new path and value to the queue
+
+        # If the current element is a list:
+        elif isinstance(current, list):
+            for idx, item in enumerate(current):  # Iterate through each item in the list
+                new_path = path + (str(idx),)  # Create a new path by appending the index
+                queue.append((new_path, item))  # Add the new path and item to the queue
+
+        # If the current element is a value (neither dict nor list):
+        else:
+            out["_".join(path)] = current  # Join the path into a string (using underscores) and store the value
+
+    return out  # Return the flattened dictionary
 
 class MockContext:
     def __init__(self):
