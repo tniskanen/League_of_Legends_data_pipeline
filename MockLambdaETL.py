@@ -1,7 +1,6 @@
 import json
-import pandas as pd
-from pandas import json_normalize
 from collections import deque
+import mysql.connector
 
 def lambda_handler(event, context):
     # TODO implement
@@ -25,16 +24,33 @@ def lambda_handler(event, context):
 
             flattened_data.append(temp_player)
 
-    df = pd.DataFrame(flattened_data)
-    df.to_csv('Test.csv',index=False)
+    conn = mysql.connector.connect(
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME
+    )
+    cursor = conn.cursor()
 
+    # Dynamically add new columns if needed
+    add_new_columns(cursor, 'your_table', flattened_data)
+
+    # Insert the data into the table
+    insert_data_to_mysql(cursor, 'your_table', flattened_data)
+
+    conn.commit()
+    cursor.close()
+    conn.close()
 
     return {
         'statusCode': 200,
         'body': json.dumps('Hello from Lambda!')
     }
 
+
+
 def flatten_json(nested_json):
+
     """Flatten the JSON into a single level (row)."""
     out = {}  # This will hold the flattened result
     queue = deque([((), nested_json)])  # Initialize a queue with the root of the JSON structure
@@ -60,6 +76,27 @@ def flatten_json(nested_json):
 
     return out  # Return the flattened dictionary
 
+def get_existing_columns(cursor, table_name):
+    cursor.execute(f"DESCRIBE {table_name}")
+    return [column[0] for column in cursor.fetchall()]
+
+def add_new_columns(cursor, table_name, json_data):
+    existing_columns = get_existing_columns(cursor, table_name)
+    new_columns = [key for key in json_data.keys() if key not in existing_columns]
+    
+    for column in new_columns:
+        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column} VARCHAR(255)")
+        print(f"Added new column: {column}")
+
+def insert_data_to_mysql(cursor, table_name, data):
+    # Prepare the INSERT statement with placeholders
+    columns = ', '.join(data.keys())
+    placeholders = ', '.join(['%s'] * len(data))
+    sql = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
+    # Execute the INSERT
+    cursor.execute(sql, list(data.values()))
+
+
 class MockContext:
     def __init__(self):
         self.function_name = 'my_lambda_function'  # The name of the Lambda function
@@ -78,5 +115,8 @@ if __name__== '__main__':
     with open('data.json', 'r') as file:
     # Parse the JSON file into a Python dictionary (or list, depending on the structure)
         data = json.load(file)
-
+    DB_HOST = ''
+    DB_USER = ''
+    DB_PASSWORD = ''
+    DB_NAME = ''
     lambda_handler(data,context)
