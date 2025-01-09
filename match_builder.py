@@ -8,7 +8,7 @@ import time
 import logging
 
 logging.basicConfig(level=logging.INFO, filename='api_errors.log')
-API_KEY = 'RGAPI-9b8dad18-0750-4bb8-af77-f8918f8185a3'
+API_KEY = 'RGAPI-e17aa8f6-26c3-4044-8ef6-3c30e3f016e0'
 games = 0
 append = 0
 temp_data = []
@@ -95,7 +95,6 @@ while games <= 10000:
     except TypeError:
         print('TypeError')
         continue
-
 
 thread = db_functions.send_json(temp_data)
 

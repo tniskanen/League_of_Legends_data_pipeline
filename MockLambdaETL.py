@@ -1,6 +1,7 @@
 import json
 from collections import deque
 import mysql.connector
+import pandas
 
 def lambda_handler(event, context):
     # TODO implement
@@ -25,10 +26,6 @@ def lambda_handler(event, context):
             flattened_data.append(temp_player)
 
     conn = mysql.connector.connect(
-        host=DB_HOST,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        database=DB_NAME
     )
     cursor = conn.cursor()
 
@@ -95,28 +92,3 @@ def insert_data_to_mysql(cursor, table_name, data):
     sql = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
     # Execute the INSERT
     cursor.execute(sql, list(data.values()))
-
-
-class MockContext:
-    def __init__(self):
-        self.function_name = 'my_lambda_function'  # The name of the Lambda function
-        self.memory_limit_in_mb = 128  # The amount of memory allocated to the function
-        self.aws_request_id = '12345-abcde'  # A mock AWS request ID
-        self.log_group_name = '/aws/lambda/my_lambda_function'  # The log group for your Lambda function
-        self.log_stream_name = '2024/12/20/[$LATEST]abcde12345'  # The log stream name
-        self.invoke_id = 'invoke-id'  # The invocation ID for the request
-
-    def get_remaining_time_in_millis(self):
-        return 30000  # The remaining time before Lambda times out (in milliseconds)
-
-
-if __name__== '__main__':
-    context = MockContext()
-    with open('data.json', 'r') as file:
-    # Parse the JSON file into a Python dictionary (or list, depending on the structure)
-        data = json.load(file)
-    DB_HOST = ''
-    DB_USER = ''
-    DB_PASSWORD = ''
-    DB_NAME = ''
-    lambda_handler(data,context)

@@ -170,7 +170,7 @@ def upload_to_s3(bucket, key, data):
         print('client connection good')
         #upload data
         s3.put_object(Bucket=bucket,Key=key,Body=data)
-        print("successful upload of {key}")
+        print(f"successful upload of {key}")
     
     except NoCredentialsError:
         print("NoCredentialsError")
@@ -199,7 +199,7 @@ def send_json(data):
 
 ###SAVING JSON LOCALLY TO TEST LAMBDA ETL
 def save_json(data):
-    file_path = os.path.join(os.getcwd(), 'data.json') 
+    file_path = os.path.join(os.getcwd(), f'match_json_objects_{int(time.time())}.json') 
     with open(file_path, 'w') as json_file:
         json.dump(data,json_file)
     print('complete')
