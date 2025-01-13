@@ -96,6 +96,8 @@ def highElo(tier,key,retries=3):
 
 #more retries incase of empty page
 def tier_division(tier,division,key,retries=5):
+    #initalizong summoners to fix unbound local error
+    summoners = None
 
     #recursion limit
     if retries <= 0:
