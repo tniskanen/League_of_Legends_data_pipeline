@@ -7,11 +7,6 @@ venv/
 # Ignore Python bytecode and __pycache__ directories
 __pycache__/
 
-#ignore csvs
-Usernames.csv
-High_elo_Usernames.csv
-Match_Data.csv
-
 #tempcoderunners
 tempCodeRunnerFile.py 
 tempCodeRunnerFile.python 
@@ -22,5 +17,5 @@ lol_database.db
 #error log
 api_errors.log
 
-#lambda venv
-my_lambda_package/
+#environment variables
+variables.env
