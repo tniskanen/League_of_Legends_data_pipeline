@@ -1,11 +1,12 @@
 import json
 from collections import deque
-import mysql.connector
 import boto3
 from dotenv import load_dotenv
 import os
 
-def lambda_handler(event, context):
+import mysql.connector
+
+def lambda_handler(bucket, fileKey):
 
     #loading environment variables
     load_dotenv()
@@ -16,8 +17,11 @@ def lambda_handler(event, context):
 
     s3_client = boto3.client('s3')
 
+    #uncomment when deploying
+    '''
     bucket = event['Records'][0]['s3']['bucket']['name']
     fileKey = event['Records'][0]['s3']['object']['key']
+    '''
 
     try:
         s3_object = s3_client.get_object(Bucket=bucket, Key=fileKey)
@@ -158,3 +162,24 @@ def insert_data_to_mysql(cursor, table_name, data):
     sql = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
     # Execute the INSERT
     cursor.execute(sql, list(data.values()))
+
+def s3_files(bucket_name):
+
+    s3_client = boto3.client('s3')
+    # List all objects in the S3 bucket
+    response = s3_client.list_objects_v2(Bucket=bucket_name)
+    return response['Contents'][0]
+    '''
+    for obj in response['Contents']:
+        # Get the file key (filename)
+        file_key = obj['Key']
+
+        # Fetch the file from S3 (you can load the file in-memory or download it)
+        file = s3_client.get_object(Bucket=bucket_name, Key=file_key)
+    '''
+
+if __name__ == "__main__":
+    bucket = 'lol-match-jsons'
+    key = s3_files(bucket)
+    lambda_handler(bucket, key)
+    
