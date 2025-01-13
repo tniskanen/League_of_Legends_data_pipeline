@@ -1,20 +1,22 @@
 import pandas as pd
-import random
 import db_functions
 import weighted_random_usernames
-import json
-import threading
-import time
 import logging
+from dotenv import load_dotenv
+import os
 
 logging.basicConfig(level=logging.INFO, filename='api_errors.log')
-API_KEY = 'RGAPI-e17aa8f6-26c3-4044-8ef6-3c30e3f016e0'
+
+#loading environment variable
+load_dotenv()
+API_KEY = os.environ.get('API_KEY')
+
 games = 0
 append = 0
 temp_data = []
 
 
-while games <= 10000:
+while games <= 5:
 
     if append >= 100:
         thread = db_functions.send_json(temp_data)
