@@ -7,16 +7,17 @@ import os
 import mysql.connector
 
 def lambda_handler(bucket, fileKey):
-
+    
     #loading environment variables
-    load_dotenv()
-    DB_HOST = os.environ.get("DB_HOST")
+    load_dotenv(dotenv_path=r"C:\dev\lol_data_project\variables.env")
+
+    #dont zip this part. only used for locally connecting to database
+    DB_HOST = os.getenv("DB_HOST")
     DB_NAME = os.environ.get("DB_NAME")
     DB_USER = os.environ.get("DB_USER")
     DB_PASSWORD = os.environ.get("DB_PASSWORD")
 
     s3_client = boto3.client('s3')
-
     #uncomment when deploying
     '''
     bucket = event['Records'][0]['s3']['bucket']['name']
@@ -24,18 +25,22 @@ def lambda_handler(bucket, fileKey):
     '''
 
     try:
+
         s3_object = s3_client.get_object(Bucket=bucket, Key=fileKey)
         file_content = s3_object['Body'].read()
         data = json.loads(file_content.decode('utf-8'))
 
+        print('info from s3 bucket received')
         flattened_data = []
 
         for game in data:
+
             for player in game['info']['participants']:
                 temp_player = flatten_json(player)
 
                 temp_player['tier'] = game['tier']
-                temp_player['division'] = game['division']
+                ## division was renamed from rank at some point during data collection
+                temp_player['division'] = game.get('rank') or game.get('division')
 
                 temp_player['dataVersion'] = game['metadata']['dataVersion']
                 temp_player['matchId'] = game['metadata']['matchId']
@@ -47,6 +52,7 @@ def lambda_handler(bucket, fileKey):
 
                 flattened_data.append(temp_player)
         
+        print('data flattened')
         columns = {}
         
         for json_obj in flattened_data:
@@ -69,11 +75,11 @@ def lambda_handler(bucket, fileKey):
 
         column_defs = [f"`{col}` {col_type}" for col, col_type in columns.items()]
         create_table_query = f"""
-        CREATE TABLE IF NOT EXISTS RankedData (
+        CREATE TABLE IF NOT EXISTS RankedDataPrototype (
             {', '.join(column_defs)})
         """ 
 
-        insert_query = f"INSERT INTO RankedData ({', '.join(columns.keys())}) VALUES ({', '.join(['%s'] * len(columns))})"
+        insert_query = f"INSERT INTO RankedDataPrototype ({', '.join(columns.keys())}) VALUES ({', '.join(['%s'] * len(columns))})"
 
         insert_data = []
         for json_obj in flattened_data:
@@ -81,6 +87,7 @@ def lambda_handler(bucket, fileKey):
                 row_data = tuple(json_obj.get(col, None) for col in columns.keys())
                 insert_data.append(row_data)
 
+        print('attempting to connect to database')
         conn = mysql.connector.connect(
             host=DB_HOST,
             user=DB_USER,
@@ -97,6 +104,7 @@ def lambda_handler(bucket, fileKey):
 
         cursor.close()
         conn.close()
+        print('connection complete!')
 
         return {
             'statusCode': 200,
@@ -111,7 +119,7 @@ def lambda_handler(bucket, fileKey):
         
     except Exception as e:
         return {
-            'statusCode': 500,
+            'statusCode': 501,
             'body': json.dumps(f"Error: {str(e)}")
         }
 
@@ -168,7 +176,7 @@ def s3_files(bucket_name):
     s3_client = boto3.client('s3')
     # List all objects in the S3 bucket
     response = s3_client.list_objects_v2(Bucket=bucket_name)
-    return response['Contents'][0]
+    return response['Contents'][1]
     '''
     for obj in response['Contents']:
         # Get the file key (filename)
@@ -180,6 +188,10 @@ def s3_files(bucket_name):
 
 if __name__ == "__main__":
     bucket = 'lol-match-jsons'
-    key = s3_files(bucket)
-    lambda_handler(bucket, key)
+    keyInfo = s3_files(bucket)
+    key = keyInfo['Key']
+    x = lambda_handler(bucket, key)
+    print(x['statusCode'])
+    print(x['body'])
+    
     
