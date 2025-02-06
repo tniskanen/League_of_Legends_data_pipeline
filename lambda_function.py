@@ -52,40 +52,6 @@ def lambda_handler(bucket, fileKey):
 
                 flattened_data.append(temp_player)
         
-        print('data flattened')
-        columns = {}
-        
-        for json_obj in flattened_data:
-            for key, value in json_obj.items():
-                # Dynamically determine the column type
-                if isinstance(value, int):
-                    column_type = "INT"
-                elif isinstance(value, float):
-                    column_type = "FLOAT"
-                elif isinstance(value, str):
-                    column_type = "VARCHAR(255)"
-                elif isinstance(value, bool):  # Check for booleans
-                    column_type = "TINYINT(1)"  # MySQL convention for boolean
-                else:
-                    column_type = "TEXT"  # For unsupported types
-                
-                # Only update the column type if it hasn't been seen before (for consistency)
-                if key not in columns:
-                    columns[key] = column_type
-
-        column_defs = [f"`{col}` {col_type}" for col, col_type in columns.items()]
-        create_table_query = f"""
-        CREATE TABLE IF NOT EXISTS RankedDataPrototype (
-            {', '.join(column_defs)})
-        """ 
-
-        insert_query = f"INSERT INTO RankedDataPrototype ({', '.join(columns.keys())}) VALUES ({', '.join(['%s'] * len(columns))})"
-
-        insert_data = []
-        for json_obj in flattened_data:
-                # Make sure the values match the order of the columns in the INSERT query
-                row_data = tuple(json_obj.get(col, None) for col in columns.keys())
-                insert_data.append(row_data)
 
         print('attempting to connect to database')
         conn = mysql.connector.connect(
@@ -96,11 +62,14 @@ def lambda_handler(bucket, fileKey):
         )
         cursor = conn.cursor()
 
-        cursor.execute(create_table_query)
-        conn.commit()
-        
-        cursor.executemany(insert_query, insert_data)
-        conn.commit()
+        # Define the batch size
+        batch_size = 200
+    
+        # Process data in batches
+        for i in range(0, len(flattened_data), batch_size):
+            batch_data = flattened_data[i:i + batch_size]  # Get the current batch of 200 rows
+            insert_data_to_mysql(cursor, "RankedDataPrototype", batch_data)  
+            conn.commit()
 
         cursor.close()
         conn.close()
@@ -108,7 +77,7 @@ def lambda_handler(bucket, fileKey):
 
         return {
             'statusCode': 200,
-            'body': json.dumps('Hello from Lambda!')
+            'body': json.dumps('data uploaded!')
         }
 
     except mysql.connector.Error as err:
@@ -151,32 +120,49 @@ def flatten_json(nested_json):
 
     return out  # Return the flattened dictionary
 
+#helper function
 def get_existing_columns(cursor, table_name):
     cursor.execute(f"DESCRIBE {table_name}")
     return [column[0] for column in cursor.fetchall()]
 
-def add_new_columns(cursor, table_name, json_data):
+#helper function
+def add_new_columns(cursor, table_name, new_columns):
     existing_columns = get_existing_columns(cursor, table_name)
-    new_columns = [key for key in json_data.keys() if key not in existing_columns]
-    
     for column in new_columns:
-        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column} VARCHAR(255)")
-        print(f"Added new column: {column}")
+        if column not in existing_columns:
+            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column} VARCHAR(255)")
+            print(f"Added new column: {column}")
 
-def insert_data_to_mysql(cursor, table_name, data):
-    # Prepare the INSERT statement with placeholders
-    columns = ', '.join(data.keys())
-    placeholders = ', '.join(['%s'] * len(data))
-    sql = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
-    # Execute the INSERT
-    cursor.execute(sql, list(data.values()))
+def align_row_data(row, existing_columns):
+    return [row.get(col, None) for col in existing_columns]
+
+def insert_data_to_mysql(cursor, table_name, rows):
+    # Retrieve the current columns in the table (do this only once)
+    existing_columns = get_existing_columns(cursor, table_name)
+
+    # Get all unique columns from the rows and identify the missing columns
+    new_columns = set(col for row in rows for col in row.keys())
+    
+    # Add missing columns to the table
+    add_new_columns(cursor, table_name, new_columns)
+    
+    # Align all rows with the existing columns (fill in None for missing columns)
+    aligned_rows = [align_row_data(row, existing_columns) for row in rows]
+    
+    # Prepare the INSERT statement with placeholders for each column
+    placeholders = ', '.join(['%s'] * len(existing_columns))
+    sql = f"INSERT INTO {table_name} ({', '.join(existing_columns)}) VALUES ({placeholders})"
+    
+    # Use executemany to insert all rows at once
+    cursor.executemany(sql, aligned_rows)
+    print(f"Inserted {len(aligned_rows)} rows into {table_name}")
 
 def s3_files(bucket_name):
 
     s3_client = boto3.client('s3')
     # List all objects in the S3 bucket
     response = s3_client.list_objects_v2(Bucket=bucket_name)
-    return response['Contents'][1]
+    return response['Contents'][2]
     '''
     for obj in response['Contents']:
         # Get the file key (filename)
