@@ -162,7 +162,7 @@ def s3_files(bucket_name):
     s3_client = boto3.client('s3')
     # List all objects in the S3 bucket
     response = s3_client.list_objects_v2(Bucket=bucket_name)
-    return response['Contents'][2]
+    return response['Contents']
     '''
     for obj in response['Contents']:
         # Get the file key (filename)
@@ -175,9 +175,12 @@ def s3_files(bucket_name):
 if __name__ == "__main__":
     bucket = 'lol-match-jsons'
     keyInfo = s3_files(bucket)
-    key = keyInfo['Key']
-    x = lambda_handler(bucket, key)
-    print(x['statusCode'])
-    print(x['body'])
+    
+    for i in range(3,len(keyInfo)):
+        x = lambda_handler(bucket, keyInfo[i]['Key'])
+        print(i)
+        print(x['statusCode'])
+        print(x['body'])
+    
     
     
