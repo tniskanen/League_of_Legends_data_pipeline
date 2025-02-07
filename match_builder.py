@@ -8,7 +8,7 @@ import os
 logging.basicConfig(level=logging.INFO, filename='api_errors.log')
 
 #loading environment variable
-load_dotenv()
+load_dotenv(dotenv_path=r"C:\dev\lol_data_project\variables.env")
 API_KEY = os.environ.get('API_KEY')
 
 games = 0
@@ -16,7 +16,7 @@ append = 0
 temp_data = []
 
 
-while games <= 5:
+while games <= 20000:
 
     if append >= 100:
         thread = db_functions.send_json(temp_data)
