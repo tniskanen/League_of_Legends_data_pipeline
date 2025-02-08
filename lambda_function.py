@@ -1,41 +1,54 @@
 import json
 from collections import deque
 import boto3
-from dotenv import load_dotenv
 import os
-
+import logging
 import mysql.connector
+
+
+# Setting up logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+# This ensures logs are directed to CloudWatch
+handler = logging.StreamHandler()
+logger.addHandler(handler)
+
+from dotenv import load_dotenv
 
 def lambda_handler(bucket, fileKey):
     
-    #loading environment variables
+    #loading environment variables locally
     load_dotenv(dotenv_path=r"C:\dev\lol_data_project\variables.env")
 
-    #dont zip this part. only used for locally connecting to database
     DB_HOST = os.getenv("DB_HOST")
     DB_NAME = os.environ.get("DB_NAME")
     DB_USER = os.environ.get("DB_USER")
     DB_PASSWORD = os.environ.get("DB_PASSWORD")
 
     s3_client = boto3.client('s3')
-    #uncomment when deploying
-    '''
-    bucket = event['Records'][0]['s3']['bucket']['name']
-    fileKey = event['Records'][0]['s3']['object']['key']
-    '''
 
     try:
+        #uncomment when deploying
+        '''
+        bucket = event['Records'][0]['s3']['bucket']['name']
+        fileKey = event['Records'][0]['s3']['object']['key']
+        '''
 
         s3_object = s3_client.get_object(Bucket=bucket, Key=fileKey)
         file_content = s3_object['Body'].read()
         data = json.loads(file_content.decode('utf-8'))
 
-        print('info from s3 bucket received')
-        flattened_data = []
+        tables = {
+            'BasicStats': [],
+            'challengeStats': [],
+            'legendaryItem': [],
+            'perkMissionStats': []
+        }
 
         for game in data:
 
             for player in game['info']['participants']:
+
                 temp_player = flatten_json(player)
 
                 temp_player['tier'] = game['tier']
@@ -49,36 +62,37 @@ def lambda_handler(bucket, fileKey):
                 temp_player['gameDuration'] = game['info']['gameDuration']
                 temp_player['gameVersion'] = game['info']['gameVersion']
                 temp_player['mapId'] = game['info']['mapId']
-
-                flattened_data.append(temp_player)
+                
+                #sorting data for seperate tables, create join keys, add temp dictionaries to data lists
+                dicts = add_join_keys(split_json(temp_player))
+                tables['BasicStats'].append(dicts[0])
+                tables['challengeStats'].append(dicts[1])
+                tables['legendaryItem'].append(dicts[2])
+                tables['perkMissionStats'].append(dicts[3])
+                
         
-
-        print('attempting to connect to database')
         conn = mysql.connector.connect(
             host=DB_HOST,
             user=DB_USER,
             password=DB_PASSWORD,
             database=DB_NAME
         )
+
         cursor = conn.cursor()
 
         # Define the batch size
         batch_size = 200
     
         # Process data in batches
-        for i in range(0, len(flattened_data), batch_size):
-            batch_data = flattened_data[i:i + batch_size]  # Get the current batch of 200 rows
-            insert_data_to_mysql(cursor, "RankedDataPrototype", batch_data)  
-            conn.commit()
+        for table in tables:
+            temp_table = tables[table]
+            for i in range(0, len(temp_table), batch_size):
 
-        cursor.close()
-        conn.close()
-        print('connection complete!')
+                batch_data = temp_table[i:i + batch_size]  # Get the current batch of 200 rows
+                insert_data_to_mysql(cursor, table, batch_data)  
+                conn.commit()
 
-        return {
-            'statusCode': 200,
-            'body': json.dumps('data uploaded!')
-        }
+
 
     except mysql.connector.Error as err:
         return {
@@ -90,6 +104,33 @@ def lambda_handler(bucket, fileKey):
         return {
             'statusCode': 501,
             'body': json.dumps(f"Error: {str(e)}")
+        }
+    
+    except s3_client.exceptions.NoSuchBucket as e:
+        logger.error(f"s3 NoSuchBucket Error: {e}")
+        return {
+            'statusCode': 404,
+            'body': json.dumps(f"S3 Bucket Error: {str(e)}")
+        }
+    
+    except s3_client.exceptions.NoSuchKey as e:
+        logger.error(f"s3 NoSuchKey Error: {e}")
+        return {
+            'statusCode': 404,
+            'body': json.dumps(f"S3 File Error: {str(e)}")
+        }
+    
+    finally:
+        # Ensuring resources are closed
+        try:
+            cursor.close()
+            conn.close()
+        except NameError:  # In case the connection is never created
+            logger.error("Database connection or cursor not initialized.")
+
+    return {
+            'statusCode': 200,
+            'body': json.dumps('data uploaded!')
         }
 
 
@@ -157,6 +198,35 @@ def insert_data_to_mysql(cursor, table_name, rows):
     cursor.executemany(sql, aligned_rows)
     print(f"Inserted {len(aligned_rows)} rows into {table_name}")
 
+def split_json(flat_dict):
+    legendaryItems = {}
+    challenges = {}
+    perkMissionStats = {}
+    basicStats = {}
+
+    for key, value in flat_dict.keys():
+        if key.startswith('perks') or key.startswith('missions'):
+            perkMissionStats[key] = value
+        elif key.startswith('challenges'):
+            if key.startswith('challenges_legendaryItemUsed'):
+                legendaryItems[key] = value
+            else:
+                challenges[key] = value
+        else:
+            basicStats[key] = value
+
+    dicts = [basicStats, challenges, legendaryItems, perkMissionStats]
+    return dicts
+
+def add_join_keys(dicts):
+
+    #add keys for joins
+    for i in range(1, 4):
+        dicts[i]['matchId'] = dicts[0]['matchId']
+        dicts[i]['championName'] = dicts[0]['championName']
+
+    return dicts
+
 def s3_files(bucket_name):
 
     s3_client = boto3.client('s3')
@@ -175,12 +245,10 @@ def s3_files(bucket_name):
 if __name__ == "__main__":
     bucket = 'lol-match-jsons'
     keyInfo = s3_files(bucket)
+    key = keyInfo[224]['Key']
     
-    for i in range(3,len(keyInfo)):
-        x = lambda_handler(bucket, keyInfo[i]['Key'])
-        print(i)
-        print(x['statusCode'])
-        print(x['body'])
-    
+    x = lambda_handler(bucket, key)
+    print(x['statusCode'])
+    print(x['body'])
     
     
