@@ -5,10 +5,12 @@ def get_existing_columns(cursor, table_name):
     return [column[0] for column in cursor.fetchall()]
 
 #helper function
-def add_new_columns(cursor, table_name, new_columns, existing_columns):
+def add_new_columns(cursor, table_name, new_columns, existing_columns, rows):
     for column in new_columns:
         if column not in existing_columns:
-            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column} VARCHAR(255)")
+            value = search_rows(rows, column)
+            datatype = infer_column_data_type(value)
+            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column} {datatype}")
             print(f"Added new column: {column}")
 
 def align_row_data(row, existing_columns):
@@ -22,7 +24,7 @@ def insert_data_to_mysql(cursor, table_name, rows):
     new_columns = set(col for row in rows for col in row.keys())
     
     # Add missing columns to the table
-    add_new_columns(cursor, table_name, new_columns, existing_columns)
+    add_new_columns(cursor, table_name, new_columns, existing_columns, rows)
     
     # Align all rows with the existing columns (fill in None for missing columns)
     aligned_rows = [align_row_data(row, existing_columns) for row in rows]
@@ -50,18 +52,7 @@ def create_tables_from_dict(tables_dict, cursor, conn):
             # For each key-value pair in the first row dictionary
             for column, value in first_row.items():
                 # Infer the datatype of each column based on the value in the first row
-                if isinstance(value, int):
-                    datatype = "INT"
-                elif isinstance(value, float):
-                    datatype = "DECIMAL(10, 2)"
-                elif isinstance(value, str):
-                    datatype = "VARCHAR(255)"
-                elif isinstance(value, bool):
-                    datatype = "BOOLEAN"
-                elif value is None:
-                    datatype = "TEXT"
-                else:
-                    datatype = "VARCHAR(255)"  # Default type for unknown types
+                datatype = infer_column_data_type(value)
 
                 # Add the column definition to the list
                 column_definitions.append(f"{column} {datatype}")
@@ -78,3 +69,24 @@ def create_tables_from_dict(tables_dict, cursor, conn):
                 print(f"Error creating table {table_name}: {err}")
                 conn.close()
 
+# Helper function to infer the datatype of a column based on the value
+def infer_column_data_type(value):
+    if isinstance(value, int):
+        return "INT"
+    elif isinstance(value, float):
+        return "DECIMAL(10, 2)"
+    elif isinstance(value, str):
+        return "VARCHAR(255)"
+    elif isinstance(value, bool):
+        return "BOOLEAN"
+    elif value is None:
+        return "TEXT"  # For NULL values, TEXT can be used
+    else:
+        return "VARCHAR(255)"  # Default type for unknown types
+    
+def search_rows(rows, key):
+    for dictionary in rows:
+        if key in dictionary:
+            return dictionary[key]
+
+    return None
