@@ -19,3 +19,6 @@ api_errors.log
 
 #environment variables
 variables.env
+
+#lambda zip
+lambda_package/
