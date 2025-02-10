@@ -64,12 +64,14 @@ def lambda_handler(bucket, fileKey):
                 temp_player['mapId'] = game['info']['mapId']
                 
                 #sorting data for seperate tables, create join keys, add temp dictionaries to data lists
+                print('starting split')
                 dicts = add_join_keys(split_json(temp_player))
                 tables['BasicStats'].append(dicts[0])
                 tables['challengeStats'].append(dicts[1])
                 tables['legendaryItem'].append(dicts[2])
                 tables['perkMissionStats'].append(dicts[3])
-                
+            
+            print('split complete') 
         
         conn = mysql.connector.connect(
             host=DB_HOST,
@@ -79,6 +81,8 @@ def lambda_handler(bucket, fileKey):
         )
 
         cursor = conn.cursor()
+        print('creating tables')
+        create_tables_from_dict(tables, cursor, conn)
 
         # Define the batch size
         batch_size = 200
@@ -86,7 +90,7 @@ def lambda_handler(bucket, fileKey):
         # Process data in batches
         for table in tables:
             temp_table = tables[table]
-            for i in range(0, len(temp_table), batch_size):
+            for i in range(1, len(temp_table), batch_size):
 
                 batch_data = temp_table[i:i + batch_size]  # Get the current batch of 200 rows
                 insert_data_to_mysql(cursor, table, batch_data)  
@@ -203,8 +207,8 @@ def split_json(flat_dict):
     challenges = {}
     perkMissionStats = {}
     basicStats = {}
-
-    for key, value in flat_dict.keys():
+    
+    for key, value in flat_dict.items():
         if key.startswith('perks') or key.startswith('missions'):
             perkMissionStats[key] = value
         elif key.startswith('challenges'):
@@ -216,6 +220,7 @@ def split_json(flat_dict):
             basicStats[key] = value
 
     dicts = [basicStats, challenges, legendaryItems, perkMissionStats]
+    
     return dicts
 
 def add_join_keys(dicts):
@@ -226,6 +231,49 @@ def add_join_keys(dicts):
         dicts[i]['championName'] = dicts[0]['championName']
 
     return dicts
+
+# Function to generate and execute CREATE TABLE statements
+def create_tables_from_dict(tables_dict, cursor, conn):
+
+    # Iterate through each table in the dictionary
+    for table_name, rows in tables_dict.items():
+        if rows:
+            # Get the first row in the list to infer column names and types
+            first_row = rows[0]
+            
+            column_definitions = []
+            
+            # For each key-value pair in the first row dictionary
+            for column, value in first_row.items():
+                # Infer the datatype of each column based on the value in the first row
+                if isinstance(value, int):
+                    datatype = "INT"
+                elif isinstance(value, float):
+                    datatype = "DECIMAL(10, 2)"
+                elif isinstance(value, str):
+                    datatype = "VARCHAR(255)"
+                elif isinstance(value, bool):
+                    datatype = "BOOLEAN"
+                elif value is None:
+                    datatype = "TEXT"
+                else:
+                    datatype = "VARCHAR(255)"  # Default type for unknown types
+
+                # Add the column definition to the list
+                column_definitions.append(f"{column} {datatype}")
+
+            # Create the CREATE TABLE query
+            create_table_query = f"CREATE TABLE IF NOT EXISTS {table_name} ({', '.join(column_definitions)});"
+
+            # Execute the query to create the table
+            try:
+                cursor.execute(create_table_query)
+                print(f"Table {table_name} created successfully.")
+                conn.commit()
+            except mysql.connector.Error as err:
+                print(f"Error creating table {table_name}: {err}")
+                conn.close()
+
 
 def s3_files(bucket_name):
 
@@ -245,10 +293,9 @@ def s3_files(bucket_name):
 if __name__ == "__main__":
     bucket = 'lol-match-jsons'
     keyInfo = s3_files(bucket)
-    key = keyInfo[224]['Key']
+    key = keyInfo[0]['Key']
     
     x = lambda_handler(bucket, key)
     print(x['statusCode'])
     print(x['body'])
-    
     

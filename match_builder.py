@@ -16,9 +16,9 @@ append = 0
 temp_data = []
 
 
-while games <= 20000:
+while games <= 100:
 
-    if append >= 100:
+    if append >= 1000:
         thread = db_functions.send_json(temp_data)
         print('memory cleared')
         temp_data = []
@@ -43,32 +43,6 @@ while games <= 20000:
         #adding player rank/tier to json
         match_data['tier'] = rank_and_Id[0][0]
         match_data['division'] = rank_and_Id[0][1]
-
-        #try block to catch missing summoner or mastery data, without restarting pipeline
-        try:
-
-            #adding summoner level and champion mastery to each participant 
-            for player in match_data['info']['participants']:
-
-                #temporary IDs for summoner and mastery requests
-                temp_puuid = player['puuid']
-                temp_champ_ID = player['championId']
-
-                #summoner level and last time the summoner level was revised 
-                summoner_info = db_functions.summoner_level(temp_puuid, API_KEY)
-                player['summonerLevel'] = summoner_info['summonerLevel']
-                player['summonerLevelRevisionDate'] = summoner_info['revisionDate']
-
-                #add champion mastery by level and points
-                mastery = db_functions.champion_mastery(temp_puuid,temp_champ_ID,API_KEY)
-                player['masteryLevel'] = mastery['championLevel']
-                player['masteryPoints'] = mastery['championPoints']
-
-        except KeyError:
-            #this error should only be catching problems with player["puuid"] and player["championId"]
-            print('keyError')
-            logging.error(f"Error parsing match {matchId}")
-            continue
 
         temp_data.append(match_data)
 

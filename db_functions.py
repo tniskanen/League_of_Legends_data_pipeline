@@ -188,7 +188,7 @@ def send_json(data):
     json_data = json.dumps(data)
 
     bucket = 'lol-match-jsons'
-    s3_key = f'match_json_objects_{int(time.time())}.json'
+    s3_key = f'match_{int(time.time())}_json_objects.json'
 
     #start upload on new thread
     upload_thread = threading.Thread(target=upload_to_s3, args=(bucket,s3_key,json_data))
