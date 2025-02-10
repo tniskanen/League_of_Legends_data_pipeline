@@ -87,7 +87,7 @@ def lambda_handler(bucket, fileKey):
         # Process data in batches
         for table in tables:
             temp_table = tables[table]
-            for i in range(1, len(temp_table), batch_size):
+            for i in range(0, len(temp_table), batch_size):
 
                 batch_data = temp_table[i:i + batch_size]  # Get the current batch of 200 rows
                 sql_utils.insert_data_to_mysql(cursor, table, batch_data)  
@@ -143,8 +143,9 @@ def s3_files(bucket_name):
 if __name__ == "__main__":
     bucket = 'lol-match-jsons'
     keyInfo = s3_files(bucket)
-    key = keyInfo[1]['Key']
-
+    key = keyInfo[3]['Key']
+    print(key)
+    
     x = lambda_handler(bucket, key)
     print(x['statusCode'])
     print(x['body'])

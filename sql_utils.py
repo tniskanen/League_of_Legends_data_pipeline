@@ -11,7 +11,7 @@ def add_new_columns(cursor, table_name, new_columns, existing_columns, rows):
             value = search_rows(rows, column)
             datatype = infer_column_data_type(value)
             cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column} {datatype}")
-            print(f"Added new column: {column}")
+            print(f"Added new column: {column} datatype: {datatype}")
 
 def align_row_data(row, existing_columns):
     return [row.get(col, None) for col in existing_columns]
