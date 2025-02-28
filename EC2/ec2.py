@@ -21,8 +21,7 @@ try:
         players.extend(json['entries'])
 
 except Exception as e:
-    logging.error(f"Error during highElo request: {e}. keyErrors indicate incorrect dictionary returned from API.
-                  typeErrors indicate request exceptions.")
+    logging.error(f"Error during highElo request: {e}. KeyErrors indicate incorrect dictionary returned from API. TypeErrors indicate request exceptions.")
 
 try:
     for player in players:

@@ -22,3 +22,4 @@ variables.env
 
 #lambda zip
 lambda_package/
+my_lambda_package.zip

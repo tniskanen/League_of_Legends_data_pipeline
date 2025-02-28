@@ -16,7 +16,7 @@ append = 0
 temp_data = []
 
 
-while games <= 100:
+while games <= 9:
 
     if append >= 1000:
         thread = db_functions.send_json(temp_data)
