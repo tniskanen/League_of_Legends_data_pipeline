@@ -1,7 +1,7 @@
 import time 
 import logging
-from api_utils import highElo, matchList, match, handle_api_response
-from db_functions import send_json
+from Utils.api import highElo, matchList, match, handle_api_response
+from Utils.S3 import send_json
 
 #environment variables
 import os
@@ -12,7 +12,7 @@ API_KEY = os.environ.get("API_KEY")
 epochDay = 86400
 players = []
 matchesList = []
-ranks = ['master','grandmaster','challenger']
+ranks =  ['master','grandmaster','challenger']
 epochTime = int(time.time() - epochDay)
 
 try:

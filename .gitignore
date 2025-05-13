@@ -1,18 +1,8 @@
 #ignore virtual environment 
 venv/
 
-# Ignore Jupyter Notebook checkpoints
-.ipynb_checkpoints/
-
 # Ignore Python bytecode and __pycache__ directories
 __pycache__/
-
-#tempcoderunners
-tempCodeRunnerFile.py 
-tempCodeRunnerFile.python 
-
-#old db
-lol_database.db
 
 #error log
 api_errors.log
@@ -20,6 +10,5 @@ api_errors.log
 #environment variables
 variables.env
 
-#lambda zip
-lambda_package/
-my_lambda_package.zip
+#DSA for collection system
+CollectionTests/

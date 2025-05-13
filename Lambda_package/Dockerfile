@@ -2,10 +2,10 @@
 FROM python:3.11-slim
 
 # Set the working directory in the container
-WORKDIR /EC2
+WORKDIR /Lambda_package
 
 # Copy the current directory contents into the container
-COPY . /EC2
+COPY . /Lambda_package
 
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
@@ -14,4 +14,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 5000
 
 # Run app.py when the container launches
-CMD ["python", "ec2.py"]
+CMD ["python", "lambda_function.py"]
