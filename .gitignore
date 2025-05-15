@@ -18,3 +18,5 @@ CollectionTests/
 
 #ec2 key
 RIOT_EC2.pem
+
+*.egg-info/
