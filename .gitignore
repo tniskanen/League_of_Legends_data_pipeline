@@ -1,14 +1,20 @@
 #ignore virtual environment 
 venv/
 
-# Ignore Python bytecode and __pycache__ directories
+# Ignore Docker artifacts
 __pycache__/
+*.pyc
+*.log
 
-#error log
-api_errors.log
+# Ignore temp runners and local configs
+.vscode/
+tempCodeRunnerFile*
 
 #environment variables
 variables.env
 
 #DSA for collection system
 CollectionTests/
+
+#ec2 key
+RIOT_EC2.pem
