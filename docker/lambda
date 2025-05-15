@@ -1,0 +1,21 @@
+# Lambda/Dockerfile
+FROM python:3.11-slim
+
+# Set the working directory in the container
+WORKDIR /lol_data_project
+
+# Copy only requirements.txt first to optimize Docker caching
+COPY Lambda_package/requirements.txt ./Lambda_package/requirements.txt
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r Lambda_package/requirements.txt
+
+# Now copy the rest of the application (Lambda_package and Utils)
+COPY Lambda_package/ ./Lambda_package/
+COPY Utils/ ./Utils/
+
+# Set the working directory to the Lambda package directory
+WORKDIR /lol_data_project/Lambda_package
+
+# Run lambda_function.py when the container launches
+CMD ["python", "lambda_function.py"]

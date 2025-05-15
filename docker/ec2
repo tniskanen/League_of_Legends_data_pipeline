@@ -1,0 +1,21 @@
+# EC2/Dockerfile
+FROM python:3.11-slim
+
+# Set the working directory in the container
+WORKDIR /lol_data_project
+
+# Copy only requirements.txt first to take advantage of Docker caching
+COPY EC2/requirements.txt ./EC2/requirements.txt
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r EC2/requirements.txt
+
+# Copy the rest of the application (EC2 and Utils)
+COPY EC2/ ./EC2/
+COPY Utils/ ./Utils/
+
+# Set the working directory to the EC2 directory
+WORKDIR /lol_data_project/EC2
+
+# Run ec2.py when the container launches
+CMD ["python", "ec2.py"]
