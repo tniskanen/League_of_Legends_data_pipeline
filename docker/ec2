@@ -1,21 +1,29 @@
-# EC2/Dockerfile
-FROM python:3.11-slim
+# Use a specific Python version for better reproducibility
+FROM python:3.10-slim
+
+# Set environment variables to optimize Python in Docker
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    # AWS SDK specific environment variables
+    AWS_EC2_METADATA_DISABLED=false \
+    AWS_SDK_LOAD_CONFIG=1
+
+# Install curl for IMDSv2 token retrieval
+RUN apt-get update && apt-get install -y curl && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory in the container
 WORKDIR /lol_data_project
 
-# Copy only requirements.txt first to take advantage of Docker caching
-COPY EC2/requirements.txt ./EC2/requirements.txt
+# Copy the entire package
+COPY . .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r EC2/requirements.txt
-
-# Copy the rest of the application (EC2 and Utils)
-COPY EC2/ ./EC2/
-COPY Utils/ ./Utils/
+# Install the package and its dependencies from setup.py
+RUN pip install -e .
 
 # Set the working directory to the EC2 directory
 WORKDIR /lol_data_project/EC2
 
-# Run ec2.py when the container launches
+# Remove ENTRYPOINT using test_aws_credentials.sh
+# Run test_ec2.py when the container launches
 CMD ["python", "ec2.py"]
