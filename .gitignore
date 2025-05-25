@@ -5,13 +5,11 @@ venv/
 __pycache__/
 *.pyc
 *.log
+*.env
 
 # Ignore temp runners and local configs
 .vscode/
 tempCodeRunnerFile*
-
-#environment variables
-variables.env
 
 #DSA for collection system
 CollectionTests/
@@ -20,3 +18,5 @@ CollectionTests/
 RIOT_EC2.pem
 
 *.egg-info/
+
+json_test.py
