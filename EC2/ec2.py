@@ -17,7 +17,7 @@ if not API_KEY:
     logging.error("Failed to retrieve API key from SSM")
     exit(1)
 
-epochDay = 86400
+epochDay = 86400 * 2
 players = []
 matchesList = []
 ranks = ['master', 'grandmaster', 'challenger']  # Fixed missing quotes
