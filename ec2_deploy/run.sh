@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Updated run.sh - Uses EC2 IAM Role instead of temporary credentials
-# The credentials automatically refresh and never expire!
+# Updated run.sh - Now includes automatic EC2 shutdown after container completion
+# Uses EC2 IAM Role instead of temporary credentials
 
 set -e
 
@@ -21,13 +21,13 @@ if [ "${DEBUG:-false}" = "true" ]; then
     set -x
 fi
 
-echo "=== AWS Container Runner with IAM Role ==="
+echo "=== AWS Container Runner with IAM Role and Auto-Shutdown ==="
 echo "Started at: $(date)"
 echo "Running as user: $(whoami)"
 echo "Current directory: $(pwd)"
 echo "Script PID: $$"
 
-# Function for error handling with cleanup
+# Function for error handling with cleanup and shutdown
 handle_error() {
     local exit_code=$1
     local error_message=$2
@@ -47,10 +47,110 @@ handle_error() {
 }
 EOF
     
+    # Shutdown instance on error after delay
+    echo "🔴 Shutting down EC2 instance due to error in 60 seconds..."
+    shutdown_ec2_instance 60
+    
     exit "$exit_code"
 }
 
-# Function to check Docker (same as before)
+# Function to shutdown EC2 instance
+shutdown_ec2_instance() {
+    local delay_seconds=${1:-0}
+    
+    echo "🛑 Preparing to shutdown EC2 instance..."
+    
+    if [ "$delay_seconds" -gt 0 ]; then
+        echo "⏳ Waiting $delay_seconds seconds before shutdown..."
+        sleep "$delay_seconds"
+    fi
+    
+    # Get instance metadata
+    echo "🔍 Getting instance metadata..."
+    
+    # Get IMDSv2 token for security
+    local token
+    token=$(curl -X PUT "http://169.254.169.254/latest/api/token" \
+        -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" \
+        --connect-timeout 5 --silent) || {
+        echo "⚠️ Failed to get IMDSv2 token, trying without token..."
+        token=""
+    }
+    
+    # Get instance ID and region
+    local instance_id region
+    if [ -n "$token" ]; then
+        instance_id=$(curl -H "X-aws-ec2-metadata-token: $token" \
+            --connect-timeout 5 --silent \
+            "http://169.254.169.254/latest/meta-data/instance-id" 2>/dev/null || echo "")
+        region=$(curl -H "X-aws-ec2-metadata-token: $token" \
+            --connect-timeout 5 --silent \
+            "http://169.254.169.254/latest/meta-data/placement/region" 2>/dev/null || echo "")
+    else
+        instance_id=$(curl --connect-timeout 5 --silent \
+            "http://169.254.169.254/latest/meta-data/instance-id" 2>/dev/null || echo "")
+        region=$(curl --connect-timeout 5 --silent \
+            "http://169.254.169.254/latest/meta-data/placement/region" 2>/dev/null || echo "")
+    fi
+    
+    if [ -z "$instance_id" ] || [ -z "$region" ]; then
+        echo "❌ Failed to get instance metadata. Instance ID: '$instance_id', Region: '$region'"
+        echo "⚠️ Cannot perform automatic shutdown. Manual intervention required."
+        return 1
+    fi
+    
+    echo "✅ Instance metadata retrieved:"
+    echo "   Instance ID: $instance_id"
+    echo "   Region: $region"
+    
+    # Update final status before shutdown
+    cat > "/tmp/container_status.json" << EOF
+{
+    "status": "shutting_down",
+    "instance_id": "$instance_id",
+    "region": "$region",
+    "shutdown_time": "$(date -Iseconds)",
+    "final_log": "$LOG_FILE"
+}
+EOF
+    
+    echo "🔄 Executing shutdown command..."
+    
+    # Use AWS CLI to stop the instance
+    if command -v aws &> /dev/null; then
+        echo "📞 Using AWS CLI to stop instance..."
+        aws ec2 stop-instances \
+            --instance-ids "$instance_id" \
+            --region "$region" \
+            --output text 2>&1 || {
+            echo "❌ AWS CLI shutdown failed, trying alternative method..."
+            # Alternative: Use the shutdown command with delay
+            echo "🔄 Using system shutdown command as fallback..."
+            sudo shutdown -h +1 "Container job completed - automatic shutdown" || {
+                echo "❌ System shutdown also failed. Manual intervention required."
+                return 1
+            }
+        }
+        
+        echo "✅ Shutdown command executed successfully"
+        echo "🏁 Instance will stop shortly. Goodbye!"
+        
+        # Log final message
+        echo "=== SHUTDOWN INITIATED ===" >> "$LOG_FILE"
+        echo "Time: $(date)" >> "$LOG_FILE"
+        echo "Instance: $instance_id" >> "$LOG_FILE"
+        echo "Region: $region" >> "$LOG_FILE"
+        
+    else
+        echo "❌ AWS CLI not available, using system shutdown..."
+        sudo shutdown -h +1 "Container job completed - automatic shutdown" || {
+            echo "❌ System shutdown failed. Manual intervention required."
+            return 1
+        }
+    fi
+}
+
+# Function to check Docker (same as before with minor logging improvements)
 check_docker() {
     echo "🐳 Checking Docker installation and service..."
     
@@ -84,7 +184,7 @@ check_docker() {
     echo "✅ Docker check completed"
 }
 
-# Function to verify IAM role credentials
+# Function to verify IAM role credentials (same as before)
 verify_iam_credentials() {
     echo "🔐 Verifying IAM role credentials..."
     
@@ -112,7 +212,7 @@ verify_iam_credentials() {
     export AWS_ACCOUNT_ID
 }
 
-# Function to load environment variables (simplified)
+# Function to load environment variables (same as before)
 load_environment_vars() {
     echo "📝 Loading environment variables..."
     
@@ -155,6 +255,7 @@ load_environment_vars() {
     export WAIT_FOR_EXIT="${WAIT_FOR_EXIT:-true}"
     export AUTO_CLEANUP="${AUTO_CLEANUP:-true}"
     export CLEANUP_VOLUMES="${CLEANUP_VOLUMES:-false}"
+    export AUTO_SHUTDOWN="${AUTO_SHUTDOWN:-true}"  # New variable for auto-shutdown
     
     # Validate required variables
     if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$REGION" ] || [ -z "$REPO_NAME" ]; then
@@ -169,6 +270,7 @@ load_environment_vars() {
     echo "   Region: ${REGION}"
     echo "   Container: ${CONTAINER_NAME}"
     echo "   Image: ${ECR_URI}"
+    echo "   Auto-shutdown: ${AUTO_SHUTDOWN}"
 }
 
 # Function to set up container parameters (same as before)
@@ -214,9 +316,9 @@ setup_container_params() {
     echo "✅ Container parameters configured"
 }
 
-# Function to run container with IAM role
+# Updated function to run container with automatic shutdown
 run_container() {
-    echo "🚀 Running container with IAM role..."
+    echo "🚀 Running container with IAM role and auto-shutdown..."
     
     # Login to ECR
     if [[ "$ECR_URI" == *".dkr.ecr."* ]]; then
@@ -247,7 +349,7 @@ run_container() {
 }
 EOF
 
-    # Run container with IAM role (no manual credential passing needed!)
+    # Run container with IAM role
     echo "🏃 Starting Docker container: ${CONTAINER_NAME}"
     CONTAINER_ID=$($DOCKER_CMD run --name "${CONTAINER_NAME}" \
         -d \
@@ -328,13 +430,35 @@ EOF
         rm -f "/tmp/container_job.lock"
         
         echo "🎉 Job completed successfully!"
+        
+        # AUTO-SHUTDOWN: Shutdown EC2 instance if enabled
+        if [ "${AUTO_SHUTDOWN:-true}" = "true" ]; then
+            echo ""
+            echo "🛑 AUTO-SHUTDOWN ENABLED"
+            echo "Container job completed, initiating EC2 instance shutdown..."
+            shutdown_ec2_instance 30  # 30 second delay to allow logs to be written
+        else
+            echo "⚠️ Auto-shutdown disabled. Instance will remain running."
+        fi
+        
         return $EXIT_CODE
     fi
 }
 
-# Main execution
+# Main execution function
 main() {
     echo "🎬 Starting main execution..."
+    
+    # Set up trap for cleanup on script termination
+    trap 'echo "🚨 Script interrupted, cleaning up..."; rm -f "/tmp/container_job.lock"; exit 1' INT TERM
+    
+    # Create lock file to prevent multiple instances
+    if [ -f "/tmp/container_job.lock" ]; then
+        echo "⚠️ Another container job is already running (lock file exists)"
+        exit 1
+    fi
+    
+    echo $$ > "/tmp/container_job.lock"
     
     check_docker
     verify_iam_credentials
@@ -348,7 +472,7 @@ main() {
     echo "📋 Log saved at: $LOG_FILE"
     echo "🔐 Used IAM role credentials (auto-refreshing)"
     echo "⏱️ No timeout limitations!"
+    echo "🛑 Auto-shutdown: ${AUTO_SHUTDOWN:-true}"
 }
 
-# Execute main function
-main "$@"
+# Execute 
