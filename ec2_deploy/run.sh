@@ -2,6 +2,7 @@
 
 # Updated run.sh - Now includes automatic EC2 shutdown after container completion
 # Uses EC2 IAM Role instead of temporary credentials
+# FIXED: Better lock file handling and race condition prevention
 
 set -e
 
@@ -10,11 +11,8 @@ LOG_DIR="/tmp/container_logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/container_run_$(date +%Y%m%d_%H%M%S).log"
 
-# Also log to the main log file (this will be used by the starter script)
-if [ -t 1 ]; then
-    # Running interactively, use tee
-    exec > >(tee -a "$LOG_FILE") 2>&1
-fi
+# FIXED: Ultra-simple logging setup that works in both interactive and background modes
+exec > >(tee -a "$LOG_FILE") 2>&1
 
 # Enable debug mode if requested
 if [ "${DEBUG:-false}" = "true" ]; then
@@ -26,6 +24,24 @@ echo "Started at: $(date)"
 echo "Running as user: $(whoami)"
 echo "Current directory: $(pwd)"
 echo "Script PID: $$"
+echo "Running mode: $(if [ -t 0 ]; then echo 'interactive'; else echo 'background'; fi)"
+
+# FIXED: Verify we have the lock or exit immediately
+LOCK_FILE="/tmp/container_job.lock"
+if [ ! -f "$LOCK_FILE" ]; then
+    echo "❌ ERROR: No lock file found. This script should be started via ssm_starter.sh"
+    exit 1
+fi
+
+# Check if we're the process that should be running
+LOCK_PID=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
+if [ "$LOCK_PID" != "$$" ]; then
+    echo "❌ ERROR: Lock file PID ($LOCK_PID) doesn't match our PID ($$)"
+    echo "This indicates another process is already running or there's a race condition."
+    exit 1
+fi
+
+echo "✅ Lock file verified - we are the authorized process"
 
 # Function for error handling with cleanup and shutdown
 handle_error() {
@@ -35,7 +51,7 @@ handle_error() {
     echo "Script failed with exit code $exit_code at $(date)"
     
     # Clean up lock file on error
-    rm -f "/tmp/container_job.lock"
+    rm -f "$LOCK_FILE"
     
     # Update status file
     cat > "/tmp/container_status.json" << EOF
@@ -150,7 +166,7 @@ EOF
     fi
 }
 
-# Function to check Docker (same as before with minor logging improvements)
+# Function to check Docker
 check_docker() {
     echo "🐳 Checking Docker installation and service..."
     
@@ -184,7 +200,7 @@ check_docker() {
     echo "✅ Docker check completed"
 }
 
-# Function to verify IAM role credentials (same as before)
+# Function to verify IAM role credentials
 verify_iam_credentials() {
     echo "🔐 Verifying IAM role credentials..."
     
@@ -212,7 +228,7 @@ verify_iam_credentials() {
     export AWS_ACCOUNT_ID
 }
 
-# Function to load environment variables (same as before)
+# Function to load environment variables
 load_environment_vars() {
     echo "📝 Loading environment variables..."
     
@@ -255,7 +271,7 @@ load_environment_vars() {
     export WAIT_FOR_EXIT="${WAIT_FOR_EXIT:-true}"
     export AUTO_CLEANUP="${AUTO_CLEANUP:-true}"
     export CLEANUP_VOLUMES="${CLEANUP_VOLUMES:-false}"
-    export AUTO_SHUTDOWN="${AUTO_SHUTDOWN:-true}"  # New variable for auto-shutdown
+    export AUTO_SHUTDOWN="${AUTO_SHUTDOWN:-true}"
     
     # Validate required variables
     if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$REGION" ] || [ -z "$REPO_NAME" ]; then
@@ -273,7 +289,7 @@ load_environment_vars() {
     echo "   Auto-shutdown: ${AUTO_SHUTDOWN}"
 }
 
-# Function to set up container parameters (same as before)
+# Function to set up container parameters
 setup_container_params() {
     echo "🔧 Setting up container parameters..."
     
@@ -316,9 +332,16 @@ setup_container_params() {
     echo "✅ Container parameters configured"
 }
 
-# Updated function to run container with automatic shutdown
+# FIXED: Enhanced function to run container with better error handling
 run_container() {
     echo "🚀 Running container with IAM role and auto-shutdown..."
+    
+    # Check if a container with the same name is already running
+    if $DOCKER_CMD ps --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$"; then
+        echo "⚠️ Container ${CONTAINER_NAME} is already running. Stopping it first..."
+        $DOCKER_CMD stop "${CONTAINER_NAME}" || true
+        $DOCKER_CMD rm "${CONTAINER_NAME}" || true
+    fi
     
     # Login to ECR
     if [[ "$ECR_URI" == *".dkr.ecr."* ]]; then
@@ -333,7 +356,7 @@ run_container() {
         }
     fi
     
-    # Clean up existing container
+    # Clean up any existing container with the same name
     if [ "$($DOCKER_CMD ps -a -q -f name=^/${CONTAINER_NAME}$)" ]; then
         echo "🧹 Removing existing container: ${CONTAINER_NAME}"
         $DOCKER_CMD rm -f ${CONTAINER_NAME}
@@ -427,7 +450,7 @@ EOF
         fi
         
         # Clean up lock file
-        rm -f "/tmp/container_job.lock"
+        rm -f "$LOCK_FILE"
         
         echo "🎉 Job completed successfully!"
         
@@ -450,15 +473,7 @@ main() {
     echo "🎬 Starting main execution..."
     
     # Set up trap for cleanup on script termination
-    trap 'echo "🚨 Script interrupted, cleaning up..."; rm -f "/tmp/container_job.lock"; exit 1' INT TERM
-    
-    # Create lock file to prevent multiple instances
-    if [ -f "/tmp/container_job.lock" ]; then
-        echo "⚠️ Another container job is already running (lock file exists)"
-        exit 1
-    fi
-    
-    echo $$ > "/tmp/container_job.lock"
+    trap 'echo "🚨 Script interrupted, cleaning up..."; rm -f "$LOCK_FILE"; exit 1' INT TERM
     
     check_docker
     verify_iam_credentials
@@ -475,4 +490,5 @@ main() {
     echo "🛑 Auto-shutdown: ${AUTO_SHUTDOWN:-true}"
 }
 
-# Execute 
+# Execute main function
+main "$@"
