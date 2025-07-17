@@ -1,6 +1,6 @@
 import time
 import logging
-from Utils.api import highElo, matchList, match, handle_api_response
+from Utils.api import highElo, LowElo, matchList, match, handle_api_response
 from Utils.S3 import send_json, get_api_key_from_ssm
 import psutil
 
@@ -20,7 +20,9 @@ if not API_KEY:
 epochDay = 86400 * 2
 players = []
 matchesList = []
-ranks = ['master', 'grandmaster', 'challenger']  # Fixed missing quotes
+ranks = ['master', 'grandmaster', 'challenger']  
+divisions = ['I', 'II', 'III', 'IV']
+tiers = ['DIAMOND']
 epochTime = int(time.time() - epochDay)
 
 try:
@@ -33,7 +35,20 @@ try:
 except Exception as e:
     logging.error(f"Error during highElo request: {e}. KeyErrors indicate incorrect dictionary returned from API. TypeErrors indicate request exceptions.")
 
-print(f"Retrieved {len(players)} players from high elo ranks")
+try:
+    for tier in tiers:
+        for division in divisions:
+            page = 1
+            while True:
+                json_response = LowElo(tier, division, page, API_KEY)
+                if json_response:
+                    players.extend(json_response)
+                    page+=1
+                else:
+                    break
+
+except Exception as e:
+    logging.error(f"Error during LowElo request: {e}. KeyErrors indicate incorrect dictionary returned from API. TypeErrors indicate request exceptions.")
 
 try:
     for player in players:
