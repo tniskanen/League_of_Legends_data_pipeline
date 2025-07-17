@@ -11,23 +11,40 @@ fi
 
 echo "🚀 Starting Lambda Docker image build and push process..."
 
-# Load environment variables from variables.env (checking both current and parent directory)
-if [ -f variables.env ]; then
-  export $(grep -v '^#' variables.env | xargs)
-  echo "✅ Environment variables loaded from variables.env"
-elif [ -f ../variables.env ]; then
-  export $(grep -v '^#' ../variables.env | xargs)
-  echo "✅ Environment variables loaded from ../variables.env"
-else
-  echo "❌ variables.env file not found in current or parent directory. Please create it and add required variables."
+# Load environment variables from variables.env (safer method)
+load_env_file() {
+  local env_file="$1"
+  if [ -f "$env_file" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      # Skip empty lines and comments
+      if [[ "$line" =~ ^[[:space:]]*$ ]] || [[ "$line" =~ ^[[:space:]]*# ]]; then
+        continue
+      fi
+      # Remove leading/trailing whitespace and export
+      line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+      if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+        export "$line"
+      fi
+    done < "$env_file"
+    return 0
+  fi
+  return 1
+}
+
+# FIXED: Actually load the environment file
+ENV_FILE="${ENV_FILE:-variables.env}"
+if ! load_env_file "$ENV_FILE"; then
+  echo "❌ Error: Environment file '$ENV_FILE' not found. Please create it with required variables."
   exit 1
 fi
+
+echo "✅ Loaded environment variables from $ENV_FILE"
 
 # Ensure necessary environment variables are set
 REQUIRED_VARS=(AWS_ACCOUNT_ID REGION REPO_NAME)
 for var in "${REQUIRED_VARS[@]}"; do
   if [ -z "${!var}" ]; then
-    echo "❌ Error: $var is not set in variables.env"
+    echo "❌ Error: $var is not set in $ENV_FILE"
     exit 1
   fi
 done
