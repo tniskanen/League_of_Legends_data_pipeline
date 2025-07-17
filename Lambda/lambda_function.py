@@ -5,6 +5,7 @@ import logging
 import mysql.connector
 import Utils.sql as sql
 from Utils.json import flatten_json, split_json, add_join_keys
+from Utils.S3 import get_api_key_from_ssm
 
 
 # Setting up logging
@@ -14,19 +15,20 @@ logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
 logger.addHandler(handler)
 
-from dotenv import load_dotenv
 
 def lambda_handler(bucket, fileKey):
     
-    #loading environment variables locally
-    load_dotenv(dotenv_path=r"C:\dev\lol_data_project\variables.env")
-
-    DB_HOST = os.getenv("DB_HOST")
-    DB_NAME = os.environ.get("DB_NAME")
-    DB_USER = os.environ.get("DB_USER")
-    DB_PASSWORD = os.environ.get("DB_PASSWORD")
+    #loading environment variables
+    DB_HOST = get_api_key_from_ssm("DB_HOST-dev")
+    DB_NAME = get_api_key_from_ssm("DB_NAME-dev")
+    DB_USER = get_api_key_from_ssm("DB_USER")
+    DB_PASSWORD = get_api_key_from_ssm("DB_PASSWORD-dev")
 
     s3_client = boto3.client('s3')
+    
+    # Initialize these variables so they exist for the finally block
+    cursor = None
+    conn = None
 
     try:
         #uncomment when deploying
@@ -45,9 +47,10 @@ def lambda_handler(bucket, fileKey):
             'legendaryItem': [],
             'perkMissionStats': []
         }
-
+        
         for game in data:
-
+            logger.info(f"Processing game: {game.get('metadata', {}).get('matchId', 'Unknown')}")
+            
             for player in game['info']['participants']:
 
                 temp_player = flatten_json(player)
@@ -71,6 +74,9 @@ def lambda_handler(bucket, fileKey):
                 tables['legendaryItem'].append(dicts[2])
                 tables['perkMissionStats'].append(dicts[3])
         
+        print(len(tables['BasicStats']))
+        logger.info(f"Total BasicStats records: {len(tables['BasicStats'])}")
+        
         conn = mysql.connector.connect(
             host=DB_HOST,
             user=DB_USER,
@@ -92,18 +98,6 @@ def lambda_handler(bucket, fileKey):
                 sql.insert_data_to_mysql(cursor, table, batch_data)  
                 conn.commit()
         
-    except mysql.connector.Error as err:
-        return {
-            'statusCode': 500,
-            'body': json.dumps(f"Error: {err}")
-        }
-        
-    except Exception as e:
-        return {
-            'statusCode': 501,
-            'body': json.dumps(f"Error: {str(e)}")
-        }
-    
     except s3_client.exceptions.NoSuchBucket as e:
         logger.error(f"s3 NoSuchBucket Error: {e}")
         return {
@@ -117,14 +111,34 @@ def lambda_handler(bucket, fileKey):
             'statusCode': 404,
             'body': json.dumps(f"S3 File Error: {str(e)}")
         }
+        
+    except mysql.connector.Error as err:
+        logger.error(f"MySQL Error: {err}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps(f"Database Error: {err}")
+        }
+        
+    except KeyError as e:
+        logger.error(f"KeyError - Missing expected key in data: {e}")
+        return {
+            'statusCode': 400,
+            'body': json.dumps(f"Data structure error - missing key: {str(e)}")
+        }
+        
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        return {
+            'statusCode': 501,
+            'body': json.dumps(f"Unexpected Error: {str(e)}")
+        }
     
     finally:
         # Ensuring resources are closed
-        try:
+        if cursor:
             cursor.close()
+        if conn:
             conn.close()
-        except NameError:  # In case the connection is never created
-            logger.error("Database connection or cursor not initialized.")
 
     return {
             'statusCode': 200,
@@ -142,14 +156,6 @@ def s3_files(bucket_name):
 if __name__ == "__main__":
     bucket = 'lol-match-jsons'
     keyInfo = s3_files(bucket)
-    keys = len(keyInfo)
-    print(keys)
-    '''
-    for i in range(0, len(keyInfo)):
-        key = keyInfo[i]['Key']
-
-        x = lambda_handler(bucket, key)
-        print(x['statusCode'])
-        print(x['body'])
-    '''
+    key = keyInfo[0]['Key']
     
+    lambda_handler(bucket, key)
