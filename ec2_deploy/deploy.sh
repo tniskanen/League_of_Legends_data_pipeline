@@ -11,12 +11,30 @@ fi
 
 echo "🚀 Starting Docker image deployment to EC2..."
 
-# Load environment variables from variables.env (checking both current and parent directory)
-if [ -f variables.env ]; then
-  export $(grep -v '^#' variables.env | xargs)
+# Load environment variables from variables.env (safer method)
+load_env_file() {
+  local env_file="$1"
+  if [ -f "$env_file" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      # Skip empty lines and comments
+      if [[ "$line" =~ ^[[:space:]]*$ ]] || [[ "$line" =~ ^[[:space:]]*# ]]; then
+        continue
+      fi
+      # Remove leading/trailing whitespace and export
+      line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+      if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+        export "$line"
+      fi
+    done < "$env_file"
+    return 0
+  fi
+  return 1
+}
+
+# Try to load environment variables
+if load_env_file "variables.env"; then
   echo "✅ Environment variables loaded from variables.env"
-elif [ -f ../variables.env ]; then
-  export $(grep -v '^#' ../variables.env | xargs)
+elif load_env_file "../variables.env"; then
   echo "✅ Environment variables loaded from ../variables.env"
 else
   echo "❌ variables.env file not found in current or parent directory. Please create it and add required variables."
