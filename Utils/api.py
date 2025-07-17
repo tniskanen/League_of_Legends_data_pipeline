@@ -108,6 +108,11 @@ def highElo(rank: str, key: str, retries: int = 3) -> Optional[Dict]:
     url = f'https://na1.api.riotgames.com/lol/league/v4/{rank}leagues/by-queue/RANKED_SOLO_5x5?api_key={key}'
     return make_api_request_with_smart_backoff(url, retries)
 
+def LowElo(rank: str, division: str, page: int, key: str, retries: int = 3) -> Optional[Dict]:
+    """Enhanced highElo with smart rate limiting"""
+    url = f'https://na1.api.riotgames.com/lol/league/v4/entries/RANKED_SOLO_5x5/{rank}/{division}?page={page}&api_key={key}'
+    return make_api_request_with_smart_backoff(url, retries)
+
 def matchList(puuid: str, key: str, epochTime: int, retries: int = 3) -> Optional[Dict]:
     """Enhanced matchList with smart rate limiting"""
     url = f'https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?startTime={epochTime}&queue=420&type=ranked&start=0&count=100&api_key={key}'
