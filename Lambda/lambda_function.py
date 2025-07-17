@@ -16,7 +16,7 @@ handler = logging.StreamHandler()
 logger.addHandler(handler)
 
 
-def lambda_handler(bucket, fileKey):
+def lambda_handler(event):
     
     #loading environment variables
     DB_HOST = get_api_key_from_ssm("DB_HOST-dev")
@@ -32,10 +32,10 @@ def lambda_handler(bucket, fileKey):
 
     try:
         #uncomment when deploying
-        '''
+        
         bucket = event['Records'][0]['s3']['bucket']['name']
         fileKey = event['Records'][0]['s3']['object']['key']
-        '''
+        
 
         s3_object = s3_client.get_object(Bucket=bucket, Key=fileKey)
         file_content = s3_object['Body'].read()
@@ -47,17 +47,22 @@ def lambda_handler(bucket, fileKey):
             'legendaryItem': [],
             'perkMissionStats': []
         }
-        
-        for game in data:
-            logger.info(f"Processing game: {game.get('metadata', {}).get('matchId', 'Unknown')}")
+
+        for game in data['matches']:
             
             for player in game['info']['participants']:
 
                 temp_player = flatten_json(player)
 
-                temp_player['tier'] = game['tier']
-                ## division was renamed from rank at some point during data collection
-                temp_player['division'] = game.get('rank') or game.get('division')
+                if 'tier' in game:
+                    temp_player['tier'] = game['tier']
+
+                # Only add 'division' if either 'rank' or 'division' exists
+                if 'rank' in game:
+                    temp_player['division'] = game['rank']
+
+                if 'leaguePoints' in game:
+                    temp_player['lp'] = game['lp']
 
                 temp_player['dataVersion'] = game['metadata']['dataVersion']
                 temp_player['matchId'] = game['metadata']['matchId']
@@ -73,9 +78,6 @@ def lambda_handler(bucket, fileKey):
                 tables['challengeStats'].append(dicts[1])
                 tables['legendaryItem'].append(dicts[2])
                 tables['perkMissionStats'].append(dicts[3])
-        
-        print(len(tables['BasicStats']))
-        logger.info(f"Total BasicStats records: {len(tables['BasicStats'])}")
         
         conn = mysql.connector.connect(
             host=DB_HOST,
@@ -156,6 +158,5 @@ def s3_files(bucket_name):
 if __name__ == "__main__":
     bucket = 'lol-match-jsons'
     keyInfo = s3_files(bucket)
-    key = keyInfo[0]['Key']
-    
-    lambda_handler(bucket, key)
+    key = keyInfo[2]['Key']
+    #lambda_handler(bucket, key)
