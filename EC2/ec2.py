@@ -18,7 +18,8 @@ if not API_KEY:
     exit(1)
 
 epochDay = 86400 * 2
-players = []
+low_elo_players = []
+high_elo_players = []
 matchesList = []
 ranks = ['master', 'grandmaster', 'challenger']  
 divisions = ['I', 'II', 'III', 'IV']
@@ -29,11 +30,22 @@ try:
     for rank in ranks:
         json_response = highElo(rank, API_KEY)  # Renamed from 'json' (reserved keyword)
         if json_response and 'entries' in json_response:
-            players.extend(json_response['entries'])
+            high_elo_players.extend(json_response['entries'])
         else:
             logging.warning(f"No entries found for rank: {rank}")
 except Exception as e:
     logging.error(f"Error during highElo request: {e}. KeyErrors indicate incorrect dictionary returned from API. TypeErrors indicate request exceptions.")
+
+# Build a dictionary mapping puuid -> rank data
+normalized_high_elo = []
+
+for player in high_elo_players:
+    normalized_high_elo.append({
+        'puuid': player['puuid'],
+        'tier': None, 
+        'rank': None, 
+        'lp': player.get('leaguePoints', 0)
+    })
 
 try:
     for tier in tiers:
@@ -42,7 +54,7 @@ try:
             while True:
                 json_response = LowElo(tier, division, page, API_KEY)
                 if json_response:
-                    players.extend(json_response)
+                    low_elo_players.extend(json_response)
                     page+=1
                 else:
                     break
@@ -50,8 +62,32 @@ try:
 except Exception as e:
     logging.error(f"Error during LowElo request: {e}. KeyErrors indicate incorrect dictionary returned from API. TypeErrors indicate request exceptions.")
 
+normalized_low_elo = []
+
+for player in low_elo_players:
+    normalized_low_elo.append({
+        'puuid': player['puuid'],
+        'tier': player['tier'].upper(),  # e.g., "DIAMOND", "PLATINUM"
+        'rank': player.get('rank', None),  # e.g., "I", "II", "III", "IV"
+        'lp': player.get('leaguePoints', 0)
+    })
+
+ranked_players = normalized_high_elo + normalized_low_elo
+
+player_rank_map = {
+    player['puuid']: {
+        'tier': player['tier'],
+        'rank': player['rank'],
+        'lp': player['lp']
+    }
+    for player in ranked_players if 'puuid' in player
+}
+
 try:
-    for player in players:
+    for player in ranked_players:
+        puuid = player.get('puuid')
+        if not puuid:
+            continue
         tempMatches = matchList(player['puuid'], API_KEY, epochTime)
         if isinstance(tempMatches, list):
             matchesList.extend(tempMatches)
@@ -73,7 +109,20 @@ try:
         temp_data = match(match_id, API_KEY)
         if handle_api_response(temp_data, func_name='match') is None:
             continue
-                     
+            
+        for participant in match['info']['participants']:
+            puuid = participant.get('puuid')
+
+            rank_info = player_rank_map.get(puuid)
+            if rank_info:
+                participant['tier'] = rank_info['tier']
+                participant['rank'] = rank_info['rank']
+                participant['lp'] = rank_info['lp']
+            else:
+                participant['tier'] = 'UNKNOWN'
+                participant['rank'] = None
+                participant['lp'] = None
+
         matches.append(temp_data)
         upload += 1
         total += 1
