@@ -1,20 +1,21 @@
-# Lambda/Dockerfile
 FROM public.ecr.aws/lambda/python:3.10
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-# Set the working directory in the container
-WORKDIR /lol_data_project
+# Copy your entire project to a subdirectory
+COPY . ${LAMBDA_TASK_ROOT}/lol_data_project
 
-COPY . .
-
-#installs project in editable mode
+# Install your project in editable mode
+WORKDIR ${LAMBDA_TASK_ROOT}/lol_data_project
 RUN pip install -e .
 
-# Set the working directory to the Lambda package directory
-WORKDIR /lol_data_project/Lambda
+# Copy the lambda function to the task root
+COPY Lambda/lambda_function.py ${LAMBDA_TASK_ROOT}/
 
-# Run lambda_handler when the container launches
+# Reset working directory to Lambda task root
+WORKDIR ${LAMBDA_TASK_ROOT}
+
+# Set the CMD to your handler
 CMD ["lambda_function.lambda_handler"]
