@@ -50,8 +50,8 @@ for var in "${REQUIRED_VARS[@]}"; do
 done
 
 # Set up image names and ECR URI
-IMAGE_NAME="${REPO_NAME}:latest"
-ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${REPO_NAME}"
+IMAGE_NAME="${REPO_NAME_LAMBDA}:latest"
+ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${REPO_NAME_LAMBDA}"
 
 # Check if AWS CLI is installed
 if ! command -v aws &> /dev/null; then
@@ -67,9 +67,9 @@ fi
 
 # Check if the ECR repository exists, create if it doesn't
 echo "🔍 Checking if ECR repository exists..."
-if ! aws ecr describe-repositories --repository-names "${REPO_NAME}" --region "${REGION}" &> /dev/null; then
-  echo "🔨 Creating ECR repository: ${REPO_NAME}"
-  aws ecr create-repository --repository-name "${REPO_NAME}" --region "${REGION}"
+if ! aws ecr describe-repositories --repository-names "${REPO_NAME_LAMBDA}" --region "${REGION}" &> /dev/null; then
+  echo "🔨 Creating ECR repository: ${REPO_NAME_LAMBDA}"
+  aws ecr create-repository --repository-name "${REPO_NAME_LAMBDA}" --region "${REGION}"
 fi
 
 # Log in to ECR with retry logic
