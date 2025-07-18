@@ -50,7 +50,7 @@ for var in "${REQUIRED_VARS[@]}"; do
 done
 
 # Construct ECR URI
-ECR_URI="$AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:latest"
+ECR_URI="$AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME_LAMBDA:latest"
 
 # Check if AWS CLI is installed
 if ! command -v aws &> /dev/null; then
