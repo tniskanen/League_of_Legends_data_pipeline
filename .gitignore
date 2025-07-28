@@ -5,7 +5,7 @@ venv/
 __pycache__/
 *.pyc
 *.log
-*.env
+sql.env
 
 # Ignore temp runners and local configs
 .vscode/
