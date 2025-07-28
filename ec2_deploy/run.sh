@@ -273,20 +273,38 @@ load_environment_vars() {
     export CLEANUP_VOLUMES="${CLEANUP_VOLUMES:-false}"
     export AUTO_SHUTDOWN="${AUTO_SHUTDOWN:-true}"
     
+    echo "🔐 Loading sensitive variables from SSM..."
+
+    export AWS_ACCOUNT_ID=$(aws ssm get-parameter --name "ACCOUNT_ID" --with-decryption --query "Parameter.Value" --output text)
+
+    if [ -z "$AWS_ACCOUNT_ID" ]; then
+    echo "❌ Failed to load AWS_ACCOUNT_ID from SSM"
+    handle_error 3 "Unable to retrieve ACCOUNT_ID from SSM"
+    fi
+
     # Validate required variables
     if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$REGION" ] || [ -z "$REPO_NAME" ]; then
         handle_error 2 "Missing required variables (AWS_ACCOUNT_ID, REGION, REPO_NAME)"
     fi
     
+    # Determine PLAYER_LIMIT based on RUN_MODE
+    if [ "${RUN_MODE}" == "test" ]; then
+        export PLAYER_LIMIT=100
+    else
+        export PLAYER_LIMIT=100000
+    fi 
+
     # Construct ECR URI
     export ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${REPO_NAME}:latest"
     
+    echo "✅ Loaded sensitive values from SSM"
     echo "✅ Environment setup complete"
     echo "   AWS Account: ${AWS_ACCOUNT_ID}"
     echo "   Region: ${REGION}"
     echo "   Container: ${CONTAINER_NAME}"
     echo "   Image: ${ECR_URI}"
     echo "   Auto-shutdown: ${AUTO_SHUTDOWN}"
+    echo "   PLAYER LIMIT SET TO ${PLAYER_LIMIT}"
 }
 
 # Function to set up container parameters
@@ -325,6 +343,7 @@ setup_container_params() {
     # Pass AWS region to container
     ENV_VARS="${ENV_VARS} -e AWS_DEFAULT_REGION=${REGION}"
     ENV_VARS="${ENV_VARS} -e AWS_REGION=${REGION}"
+    ENV_VARS="${ENV_VARS} -e PLAYER_LIMIT=${PLAYER_LIMIT}"
     
     # Extra Docker arguments
     EXTRA_ARGS="${DOCKER_RUN_ARGS:-}"
