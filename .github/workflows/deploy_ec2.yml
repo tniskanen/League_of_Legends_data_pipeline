@@ -90,15 +90,16 @@ jobs:
       # Map secrets to standard AWS environment variables
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
       AWS_REGION: ${{ secrets.AWS_REGION }}
-      AWS_ACCOUNT_ID: ${{ secrets.ECR_REGISTRY_EC2 }}  # Assuming this contains your AWS account ID
+      ECR_REGISTRY: ${{ secrets.ECR_REGISTRY_EC2 }}  # This is the full ECR registry URI
       ECR_REPOSITORY_EC2: ${{ secrets.ECR_REPOSITORY_EC2 }}
       
       # Map variables
       CLEANUP: ${{ vars.CLEANUP }}
       DEBUG: ${{ vars.DEBUG }}
       EC2_USER: ${{ vars.EC2_USER }}
-      REGION: ${{ vars.REGION }}
+      REGION: ${{ secrets.AWS_REGION }}
       REPO_NAME: ${{ vars.REPO_NAME }}
       
       # Optional build args
@@ -126,6 +127,30 @@ jobs:
             fi
           done
           echo "✅ All required variables are set"
+
+      - name: Debug environment variables
+        run: |
+          echo "🔍 Debugging environment variables:"
+          echo "AWS_REGION: ${AWS_REGION}"
+          echo "ECR_REGISTRY: ${ECR_REGISTRY}"
+          echo "ECR_REPOSITORY_EC2: ${ECR_REPOSITORY_EC2}"
+          echo "Expected ECR URI: ${ECR_REGISTRY}/${ECR_REPOSITORY_EC2}:latest"
+          
+          # Extract account ID from ECR registry for verification
+          if [[ "${ECR_REGISTRY}" =~ ^([0-9]{12})\.dkr\.ecr\.([^.]+)\.amazonaws\.com$ ]]; then
+            echo "Extracted AWS Account ID: ${BASH_REMATCH[1]}"
+            echo "Extracted Region: ${BASH_REMATCH[2]}"
+          else
+            echo "⚠️ ECR_REGISTRY format doesn't match expected pattern"
+          fi
+          
+          # Test AWS connectivity
+          echo "🔍 Testing AWS connectivity:"
+          aws sts get-caller-identity
+          
+          # Test ECR connectivity
+          echo "🔍 Testing ECR repository access:"
+          aws ecr describe-repositories --repository-names "${ECR_REPOSITORY_EC2}" --region "${AWS_REGION}" || echo "Repository may not exist yet"
 
       - name: Run build script
         run: |
