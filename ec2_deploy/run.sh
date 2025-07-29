@@ -435,7 +435,7 @@ EOF
     
     # Wait for container completion
     if [ "${WAIT_FOR_EXIT:-true}" = "true" ]; then
-        echo "⏳ Waiting for container to complete (this may take 4-6 hours)..."
+        echo "⏳ Waiting for container to complete..."
         $DOCKER_CMD wait ${CONTAINER_NAME}
         
         # Get final status
