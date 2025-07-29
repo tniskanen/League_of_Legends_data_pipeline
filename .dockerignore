@@ -22,3 +22,4 @@ var/
 .vscode
 .pem
 .log
+ec2_deploy/
