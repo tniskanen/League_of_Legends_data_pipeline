@@ -290,8 +290,10 @@ load_environment_vars() {
     # Determine PLAYER_LIMIT based on RUN_MODE
     if [ "${RUN_MODE}" == "test" ]; then
         export PLAYER_LIMIT=100
+        export BUCKET_NAME='lol-match-test'
     else
         export PLAYER_LIMIT=100000
+        export BUCKET_NAME='lol-match-jsons'
     fi 
 
     # Construct ECR URI
@@ -305,6 +307,7 @@ load_environment_vars() {
     echo "   Image: ${ECR_URI}"
     echo "   Auto-shutdown: ${AUTO_SHUTDOWN}"
     echo "   PLAYER LIMIT SET TO ${PLAYER_LIMIT}"
+    echo "   BUCKET SET TO ${BUCKET_NAME}"
 }
 
 # Function to set up container parameters
