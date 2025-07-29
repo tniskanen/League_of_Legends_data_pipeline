@@ -18,7 +18,7 @@ for var in "${REQUIRED_VARS[@]}"; do
     exit 1
   fi
 done
- 
+  
 # Extract AWS Account ID from ECR Registry URI if needed
 if [[ "${ECR_REGISTRY}" =~ ^([0-9]{12})\.dkr\.ecr\.([^.]+)\.amazonaws\.com$ ]]; then
   AWS_ACCOUNT_ID="${BASH_REMATCH[1]}"
