@@ -1,0 +1,75 @@
+name: Deploy EC2 Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      ec2_files_changed: ${{ steps.changed.outputs.ec2_files_changed }}
+      docker_files_changed: ${{ steps.changed.outputs.docker_files_changed }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Check for changes
+        id: changed
+        run: |
+          echo "EC2 file changes:"
+          git diff --name-only ${{ github.event.before }} ${{ github.sha }} > changed_files.txt
+          
+          # Detect EC2 file changes
+          if grep -Eq '^ec2_deploy/(starter\.sh|run\.sh)$|^variables\.env$' changed_files.txt; then
+            echo "ec2_files_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "ec2_files_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Detect Docker-related changes
+          if grep -Eiq '^(docker/ec2|EC2/|ec2_deploy/(build\.sh|deploy\.sh)|Utils/|requirements\.txt|setup\.py|__init__\.py|\.gitignore|\.dockerignore)' changed_files.txt; then
+            echo "docker_files_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "docker_files_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+  update-ec2-files:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.ec2_files_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Add SSH key
+        run: |
+          echo "${{ secrets.EC2_SSH_KEY }}" > ec2_key.pem
+          chmod 600 ec2_key.pem
+
+      - name: Upload updated files to EC2
+        run: |
+          scp -i ec2_key.pem ec2_deploy/starter.sh ec2_deploy/run.sh ec2-user@${{ secrets.EC2_PUBLIC_IP }}:/home/ec2-user/
+          scp -i ec2_key.pem variables.env ec2-user@${{ secrets.EC2_PUBLIC_IP }}:/home/ec2-user/
+
+  build-and-deploy-docker:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.docker_files_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          region: ${{ secrets.AWS_REGION }}
+
+      - name: Run EC2 build + deploy scripts
+        run: |
+          chmod +x ec2_deploy/build.sh ec2_deploy/deploy.sh
+          ./ec2_deploy/build.sh
+          ./ec2_deploy/deploy.sh
