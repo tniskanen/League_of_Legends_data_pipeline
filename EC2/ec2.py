@@ -117,7 +117,7 @@ try:
         if handle_api_response(temp_data, func_name='match') is None:
             continue
             
-        for participant in match['info']['participants']:
+        for participant in temp_data['info']['participants']:
             puuid = participant.get('puuid')
 
             rank_info = player_rank_map.get(puuid)
