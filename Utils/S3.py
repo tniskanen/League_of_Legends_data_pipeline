@@ -53,7 +53,7 @@ def upload_to_s3(bucket, key, data, match_count):
         traceback.print_exc()
         raise
 
-def send_json(data, custom_date=None):
+def send_json(data, bucket, custom_date=None):
     """
     Upload JSON to S3 with date-based folder structure
     
@@ -98,7 +98,6 @@ def send_json(data, custom_date=None):
     }
     
     json_data = json.dumps(enhanced_data)
-    bucket = 'lol-match-jsons'
 
     # Start upload on new thread
     upload_thread = threading.Thread(
