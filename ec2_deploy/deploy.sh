@@ -13,19 +13,29 @@ echo "🚀 Starting Docker image deployment to EC2..."
 
 # Get variables from environment (set by GitHub Actions)
 # These should be available as environment variables
-AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID}"
+ECR_REGISTRY="${ECR_REGISTRY}"
 REGION="${AWS_REGION:-${REGION}}"  # Try AWS_REGION first, then REGION
 REPO_NAME="${ECR_REPOSITORY_EC2:-${REPO_NAME}}"  # Try ECR_REPOSITORY_EC2 first, then REPO_NAME
 EC2_USER="${EC2_USER}"
 EC2_IP="${EC2_IP}"
 KEY_PATH="${KEY_PATH}"
 
-# Fallback to GitHub Actions specific environment variables if not set
-if [ -z "$AWS_ACCOUNT_ID" ] && [ -n "$ECR_REGISTRY_EC2" ]; then
-  AWS_ACCOUNT_ID="$ECR_REGISTRY_EC2"
+# Extract AWS Account ID from ECR Registry if provided
+if [ -n "$ECR_REGISTRY" ] && [[ "${ECR_REGISTRY}" =~ ^([0-9]{12})\.dkr\.ecr\.([^.]+)\.amazonaws\.com$ ]]; then
+  AWS_ACCOUNT_ID="${BASH_REMATCH[1]}"
+  EXTRACTED_REGION="${BASH_REMATCH[2]}"
+  
+  # Use extracted region if REGION wasn't set
+  if [ -z "$REGION" ]; then
+    REGION="$EXTRACTED_REGION"
+  fi
+else
+  # Fallback to environment variables
+  AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID}"
 fi
 
 echo "🔍 Configuration:"
+echo "  - ECR Registry: ${ECR_REGISTRY}"
 echo "  - AWS Account ID: ${AWS_ACCOUNT_ID}"
 echo "  - Region: ${REGION}"
 echo "  - Repository: ${REPO_NAME}"
@@ -59,7 +69,11 @@ else
 fi
 
 # Construct ECR URI
-ECR_URI="$AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:latest"
+if [ -n "$ECR_REGISTRY" ]; then
+  ECR_URI="$ECR_REGISTRY/$REPO_NAME:latest"
+else
+  ECR_URI="$AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:latest"
+fi
 
 echo "🔄 Connecting to EC2 ($EC2_IP) and pulling Docker image..."
 echo "📦 ECR URI: $ECR_URI"
