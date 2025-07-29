@@ -105,56 +105,57 @@ while [ $retry_count -lt $MAX_RETRIES ]; do
       retry_count=$((retry_count + 1))
       if [ $retry_count -lt $MAX_RETRIES ]; then
         echo "⚠️ Both ECR login methods failed. Checking connectivity and retrying..."
-      
-      # Debug information
-      echo "🔍 Debugging ECR connectivity:"
-      echo "  - AWS Region: ${AWS_REGION}"
-      echo "  - AWS Account ID: ${AWS_ACCOUNT_ID}"
-      echo "  - ECR Registry: ${ECR_REGISTRY}"
-      
-      # Test AWS CLI connectivity
-      if aws sts get-caller-identity --region "${AWS_REGION}" >/dev/null 2>&1; then
-        echo "  ✅ AWS CLI credentials are working"
-      else
-        echo "  ❌ AWS CLI credentials issue"
-      fi
-      
-      # Test ECR registry connectivity
-      if nslookup "${ECR_REGISTRY}" >/dev/null 2>&1; then
-        echo "  ✅ ECR registry DNS resolution working"
-      else
-        echo "  ❌ ECR registry DNS resolution failed"
-        echo "  🔄 Trying alternative DNS resolution..."
         
-        # Try with different DNS approach
-        if dig "${ECR_REGISTRY}" >/dev/null 2>&1; then
-          echo "  ✅ Alternative DNS resolution working"
+        # Debug information
+        echo "🔍 Debugging ECR connectivity:"
+        echo "  - AWS Region: ${AWS_REGION}"
+        echo "  - AWS Account ID: ${AWS_ACCOUNT_ID}"
+        echo "  - ECR Registry: ${ECR_REGISTRY}"
+        
+        # Test AWS CLI connectivity
+        if aws sts get-caller-identity --region "${AWS_REGION}" >/dev/null 2>&1; then
+          echo "  ✅ AWS CLI credentials are working"
         else
-          echo "  ❌ DNS issues detected"
+          echo "  ❌ AWS CLI credentials issue"
         fi
-      fi
-      
-      # Try direct AWS ECR get-authorization-token as alternative
-      echo "  🔄 Trying alternative ECR authentication method..."
-      if aws ecr get-authorization-token --region "${AWS_REGION}" >/dev/null 2>&1; then
-        echo "  ✅ ECR authorization token retrieval working"
+        
+        # Test ECR registry connectivity
+        if nslookup "${ECR_REGISTRY}" >/dev/null 2>&1; then
+          echo "  ✅ ECR registry DNS resolution working"
+        else
+          echo "  ❌ ECR registry DNS resolution failed"
+          echo "  🔄 Trying alternative DNS resolution..."
+          
+          # Try with different DNS approach
+          if dig "${ECR_REGISTRY}" >/dev/null 2>&1; then
+            echo "  ✅ Alternative DNS resolution working"
+          else
+            echo "  ❌ DNS issues detected"
+          fi
+        fi
+        
+        # Try direct AWS ECR get-authorization-token as alternative
+        echo "  🔄 Trying alternative ECR authentication method..."
+        if aws ecr get-authorization-token --region "${AWS_REGION}" >/dev/null 2>&1; then
+          echo "  ✅ ECR authorization token retrieval working"
+        else
+          echo "  ❌ ECR authorization token retrieval failed"
+        fi
+        
+        sleep 5
       else
-        echo "  ❌ ECR authorization token retrieval failed"
+        echo "❌ Failed to login to ECR after $MAX_RETRIES attempts"
+        echo "🔍 Final debug information:"
+        echo "  - Region: ${AWS_REGION}"
+        echo "  - Registry: ${ECR_REGISTRY}"
+        echo "  - Account ID: ${AWS_ACCOUNT_ID}"
+        
+        # Try to get more specific error information
+        echo "🔍 Testing AWS ECR describe-repositories..."
+        aws ecr describe-repositories --repository-names "${ECR_REPOSITORY_EC2}" --region "${AWS_REGION}" || echo "ECR repository access failed"
+        
+        exit 1
       fi
-      
-      sleep 5
-    else
-      echo "❌ Failed to login to ECR after $MAX_RETRIES attempts"
-      echo "🔍 Final debug information:"
-      echo "  - Region: ${AWS_REGION}"
-      echo "  - Registry: ${ECR_REGISTRY}"
-      echo "  - Account ID: ${AWS_ACCOUNT_ID}"
-      
-      # Try to get more specific error information
-      echo "🔍 Testing AWS ECR describe-repositories..."
-      aws ecr describe-repositories --repository-names "${ECR_REPOSITORY_EC2}" --region "${AWS_REGION}" || echo "ECR repository access failed"
-      
-      exit 1
     fi
   fi
 done
