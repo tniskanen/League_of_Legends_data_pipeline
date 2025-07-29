@@ -119,7 +119,7 @@ jobs:
       - name: Validate environment variables
         run: |
           echo "Validating required environment variables..."
-          required_vars=("AWS_ACCOUNT_ID" "AWS_REGION" "ECR_REPOSITORY_EC2")
+          required_vars=("ECR_REGISTRY_EC2" "AWS_REGION" "ECR_REPOSITORY_EC2")
           for var in "${required_vars[@]}"; do
             if [ -z "${!var}" ]; then
               echo "❌ Error: $var is not set"
