@@ -11,41 +11,35 @@ fi
 
 echo "🚀 Starting Docker image deployment to EC2..."
 
-# Load environment variables from variables.env (safer method)
-load_env_file() {
-  local env_file="$1"
-  if [ -f "$env_file" ]; then
-    while IFS= read -r line || [ -n "$line" ]; do
-      # Skip empty lines and comments
-      if [[ "$line" =~ ^[[:space:]]*$ ]] || [[ "$line" =~ ^[[:space:]]*# ]]; then
-        continue
-      fi
-      # Remove leading/trailing whitespace and export
-      line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-      if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
-        export "$line"
-      fi
-    done < "$env_file"
-    return 0
-  fi
-  return 1
-}
+# Get variables from environment (set by GitHub Actions)
+# These should be available as environment variables
+AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID}"
+REGION="${AWS_REGION:-${REGION}}"  # Try AWS_REGION first, then REGION
+REPO_NAME="${ECR_REPOSITORY_EC2:-${REPO_NAME}}"  # Try ECR_REPOSITORY_EC2 first, then REPO_NAME
+EC2_USER="${EC2_USER}"
+EC2_IP="${EC2_IP}"
+KEY_PATH="${KEY_PATH}"
 
-# Try to load environment variables
-if load_env_file "variables.env"; then
-  echo "✅ Environment variables loaded from variables.env"
-elif load_env_file "../variables.env"; then
-  echo "✅ Environment variables loaded from ../variables.env"
-else
-  echo "❌ variables.env file not found in current or parent directory. Please create it and add required variables."
-  exit 1
+# Fallback to GitHub Actions specific environment variables if not set
+if [ -z "$AWS_ACCOUNT_ID" ] && [ -n "$ECR_REGISTRY_EC2" ]; then
+  AWS_ACCOUNT_ID="$ECR_REGISTRY_EC2"
 fi
+
+echo "🔍 Configuration:"
+echo "  - AWS Account ID: ${AWS_ACCOUNT_ID}"
+echo "  - Region: ${REGION}"
+echo "  - Repository: ${REPO_NAME}"
+echo "  - EC2 User: ${EC2_USER}"
+echo "  - EC2 IP: ${EC2_IP}"
+echo "  - Key Path: ${KEY_PATH}"
 
 # Ensure all required variables are present
 REQUIRED_VARS=(AWS_ACCOUNT_ID REGION REPO_NAME EC2_USER EC2_IP KEY_PATH)
 for var in "${REQUIRED_VARS[@]}"; do
   if [ -z "${!var}" ]; then
-    echo "❌ Error: $var is not set in variables.env"
+    echo "❌ Error: $var is not set"
+    echo "Available environment variables:"
+    env | grep -E '^(AWS_|ECR_|REGION|REPO_|EC2_|KEY_)' | sort
     exit 1
   fi
 done
@@ -68,18 +62,21 @@ fi
 ECR_URI="$AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:latest"
 
 echo "🔄 Connecting to EC2 ($EC2_IP) and pulling Docker image..."
+echo "📦 ECR URI: $ECR_URI"
 
 # Check SSH connection before attempting commands
 echo "🔍 Testing SSH connection..."
-if ! ssh -o ConnectTimeout=10 -o BatchMode=yes -i "$KEY_PATH" "$EC2_USER@$EC2_IP" exit &>/dev/null; then
+if ! ssh -o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyChecking=no -i "$KEY_PATH" "$EC2_USER@$EC2_IP" exit &>/dev/null; then
   echo "❌ Cannot establish SSH connection to $EC2_IP. Please check credentials and network."
   exit 1
 fi
 
 # SSH into EC2 to pull image from ECR
 echo "🖥️ Establishing SSH connection to EC2..."
-ssh -i "$KEY_PATH" "$EC2_USER@$EC2_IP" << EOF
+ssh -o StrictHostKeyChecking=no -i "$KEY_PATH" "$EC2_USER@$EC2_IP" << EOF
   set -e
+  
+  echo "🔍 Checking EC2 instance prerequisites..."
   
   # Check if Docker is installed and running
   if ! command -v docker &> /dev/null; then
@@ -89,7 +86,11 @@ ssh -i "$KEY_PATH" "$EC2_USER@$EC2_IP" << EOF
   
   if ! docker info &> /dev/null; then
     echo "❌ Docker is not running on EC2 instance"
-    exit 1
+    echo "Attempting to start Docker..."
+    sudo systemctl start docker || {
+      echo "❌ Failed to start Docker"
+      exit 1
+    }
   fi
   
   # Check if AWS CLI is installed
@@ -176,10 +177,14 @@ ssh -i "$KEY_PATH" "$EC2_USER@$EC2_IP" << EOF
   docker system df
   
   echo "✅ Image deployment complete. Image is ready on EC2 instance."
+  echo "📋 Summary:"
+  echo "  - Image: $ECR_URI"
+  echo "  - Status: Successfully deployed to EC2"
 EOF
 
 if [ $? -eq 0 ]; then
   echo "✅ Deployment successful: Docker image has been deployed to EC2 instance"
+  echo "🎉 All operations completed successfully!"
 else
   echo "❌ Deployment failed with error code: $?"
   exit 1
