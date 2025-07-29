@@ -14,6 +14,7 @@ start_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
 API_KEY = get_api_key_from_ssm("API_KEY")
 
 player_limit = int(os.environ.get("PLAYER_LIMIT", 100000))
+bucket = os.environ.get("BUCKET_NAME", 'lol-match-jsons')
 
 # Check if API key was retrieved successfully
 if not API_KEY:
@@ -134,7 +135,7 @@ try:
         total += 1
         
         if upload >= 500:
-            thread = send_json(matches.copy())  # Explicit copy
+            thread = send_json(matches.copy(), bucket)  # Explicit copy
             if thread:
                 active_threads.append(thread)
             upload = 0
@@ -145,7 +146,7 @@ except Exception as e:
 
 # Upload remaining matches
 if matches:
-    thread = send_json(matches)
+    thread = send_json(matches, bucket)
     if thread:
         active_threads.append(thread)
 
