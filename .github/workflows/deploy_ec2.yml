@@ -13,25 +13,43 @@ jobs:
       docker_files_changed: ${{ steps.changed.outputs.docker_files_changed }}
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for git diff
 
       - name: Check for changes
         id: changed
         run: |
-          echo "EC2 file changes:"
+          echo "Checking for file changes..."
+          
+          # Handle first commit case
+          if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+            echo "First commit detected, treating all files as changed"
+            echo "ec2_files_changed=true" >> $GITHUB_OUTPUT
+            echo "docker_files_changed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Get changed files
           git diff --name-only ${{ github.event.before }} ${{ github.sha }} > changed_files.txt
+          echo "Changed files:"
+          cat changed_files.txt
           
           # Detect EC2 file changes
           if grep -Eq '^ec2_deploy/(starter\.sh|run\.sh)$|^variables\.env$' changed_files.txt; then
+            echo "EC2 files changed detected"
             echo "ec2_files_changed=true" >> $GITHUB_OUTPUT
           else
+            echo "No EC2 files changed"
             echo "ec2_files_changed=false" >> $GITHUB_OUTPUT
           fi
-
+          
           # Detect Docker-related changes
           if grep -Eiq '^(docker/ec2|EC2/|ec2_deploy/(build\.sh|deploy\.sh)|Utils/|requirements\.txt|setup\.py|__init__\.py|\.gitignore|\.dockerignore)' changed_files.txt; then
+            echo "Docker files changed detected"
             echo "docker_files_changed=true" >> $GITHUB_OUTPUT
           else
+            echo "No Docker files changed"
             echo "docker_files_changed=false" >> $GITHUB_OUTPUT
           fi
 
@@ -41,35 +59,88 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Add SSH key
         run: |
           echo "${{ secrets.EC2_SSH_KEY }}" > ec2_key.pem
           chmod 600 ec2_key.pem
 
+      - name: Test SSH connection
+        run: |
+          ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i ec2_key.pem ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }} "echo 'SSH connection successful'"
+
       - name: Upload updated files to EC2
         run: |
-          scp -i ec2_key.pem ec2_deploy/starter.sh ec2_deploy/run.sh ec2-user@${{ secrets.EC2_PUBLIC_IP }}:/home/ec2-user/
-          scp -i ec2_key.pem variables.env ec2-user@${{ secrets.EC2_PUBLIC_IP }}:/home/ec2-user/
+          # Create remote directory if it doesn't exist
+          ssh -o StrictHostKeyChecking=no -i ec2_key.pem ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }} "mkdir -p /home/${{ vars.EC2_USER }}"
+          
+          # Upload files
+          scp -o StrictHostKeyChecking=no -i ec2_key.pem ec2_deploy/starter.sh ec2_deploy/run.sh ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }}:/home/${{ vars.EC2_USER }}/
+          scp -o StrictHostKeyChecking=no -i ec2_key.pem variables.env ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }}:/home/${{ vars.EC2_USER }}/
+          
+          # Make scripts executable
+          ssh -o StrictHostKeyChecking=no -i ec2_key.pem ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }} "chmod +x /home/${{ vars.EC2_USER }}/*.sh"
 
   build-and-deploy-docker:
     needs: detect-changes
     if: needs.detect-changes.outputs.docker_files_changed == 'true'
     runs-on: ubuntu-latest
+    env:
+      # Map secrets to standard AWS environment variables
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_ACCOUNT_ID: ${{ secrets.ECR_REGISTRY_EC2 }}  # Assuming this contains your AWS account ID
+      ECR_REPOSITORY_EC2: ${{ secrets.ECR_REPOSITORY_EC2 }}
+      
+      # Map variables
+      CLEANUP: ${{ vars.CLEANUP }}
+      DEBUG: ${{ vars.DEBUG }}
+      EC2_USER: ${{ vars.EC2_USER }}
+      REGION: ${{ vars.REGION }}
+      REPO_NAME: ${{ vars.REPO_NAME }}
+      
+      # Optional build args
+      BUILD_ARGS: ${{ vars.BUILD_ARGS }}
+      
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Run EC2 build + deploy scripts
+      - name: Validate environment variables
         run: |
-          chmod +x ec2_deploy/build.sh ec2_deploy/deploy.sh
+          echo "Validating required environment variables..."
+          required_vars=("AWS_ACCOUNT_ID" "AWS_REGION" "ECR_REPOSITORY_EC2")
+          for var in "${required_vars[@]}"; do
+            if [ -z "${!var}" ]; then
+              echo "❌ Error: $var is not set"
+              exit 1
+            fi
+          done
+          echo "✅ All required variables are set"
+
+      - name: Run build script
+        run: |
+          chmod +x ec2_deploy/build.sh
           ./ec2_deploy/build.sh
+
+      - name: Add SSH key for deploy
+        run: |
+          echo "${{ secrets.EC2_SSH_KEY }}" > ec2_key.pem
+          chmod 600 ec2_key.pem
+
+      - name: Run deploy script
+        env:
+          EC2_IP: ${{ secrets.EC2_PUBLIC_IP }}
+          KEY_PATH: "./ec2_key.pem"
+        run: |
+          chmod +x ec2_deploy/deploy.sh
           ./ec2_deploy/deploy.sh
