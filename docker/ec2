@@ -21,9 +21,11 @@ COPY . .
 # Install the package and its dependencies from setup.py
 RUN pip install -e .
 
+# KEY FIX: Add the project root to Python path so EC2/ec2.py can import Utils
+ENV PYTHONPATH="/lol_data_project:$PYTHONPATH"
+
 # Set the working directory to the EC2 directory
 WORKDIR /lol_data_project/EC2
 
-# Remove ENTRYPOINT using test_aws_credentials.sh
-# Run test_ec2.py when the container launches
+# Run ec2.py when the container launches
 CMD ["python", "ec2.py"]
