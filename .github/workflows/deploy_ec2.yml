@@ -11,6 +11,7 @@ jobs:
     outputs:
       ec2_files_changed: ${{ steps.changed.outputs.ec2_files_changed }}
       docker_files_changed: ${{ steps.changed.outputs.docker_files_changed }}
+      needs_ec2: ${{ steps.changed.outputs.needs_ec2 }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -27,6 +28,7 @@ jobs:
             echo "First commit detected, treating all files as changed"
             echo "ec2_files_changed=true" >> $GITHUB_OUTPUT
             echo "docker_files_changed=true" >> $GITHUB_OUTPUT
+            echo "needs_ec2=true" >> $GITHUB_OUTPUT
             exit 0
           fi
           
@@ -52,9 +54,63 @@ jobs:
             echo "No Docker files changed"
             echo "docker_files_changed=false" >> $GITHUB_OUTPUT
           fi
+          
+          # Determine if we need EC2 instance running
+          if [[ "$ec2_files_changed" == "true" || "$docker_files_changed" == "true" ]]; then
+            echo "EC2 instance will be needed"
+            echo "needs_ec2=true" >> $GITHUB_OUTPUT
+          else
+            echo "EC2 instance not needed"
+            echo "needs_ec2=false" >> $GITHUB_OUTPUT
+          fi
+
+  manage-ec2-power:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.needs_ec2 == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      instance_was_running: ${{ steps.check-state.outputs.instance_was_running }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Check EC2 instance state
+        id: check-state
+        run: |
+          echo "Checking EC2 instance state..."
+          INSTANCE_STATE=$(aws ec2 describe-instances \
+            --instance-ids ${{ secrets.EC2_INSTANCE_ID }} \
+            --query 'Reservations[0].Instances[0].State.Name' \
+            --output text)
+          
+          echo "Current instance state: $INSTANCE_STATE"
+          
+          if [[ "$INSTANCE_STATE" == "running" ]]; then
+            echo "Instance is already running"
+            echo "instance_was_running=true" >> $GITHUB_OUTPUT
+          else
+            echo "Instance is not running, will start it"
+            echo "instance_was_running=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Start EC2 instance if needed
+        if: steps.check-state.outputs.instance_was_running == 'false'
+        run: |
+          echo "Starting EC2 instance..."
+          aws ec2 start-instances --instance-ids ${{ secrets.EC2_INSTANCE_ID }}
+          
+          echo "Waiting for instance to be running..."
+          aws ec2 wait instance-running --instance-ids ${{ secrets.EC2_INSTANCE_ID }}
+          
+          echo "Instance is now running. Waiting additional 30 seconds for SSH to be ready..."
+          sleep 30
 
   update-ec2-files:
-    needs: detect-changes
+    needs: [detect-changes, manage-ec2-power]
     if: needs.detect-changes.outputs.ec2_files_changed == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -66,9 +122,23 @@ jobs:
           echo "${{ secrets.EC2_SSH_KEY }}" > ec2_key.pem
           chmod 600 ec2_key.pem
 
-      - name: Test SSH connection
+      - name: Test SSH connection with retries
         run: |
-          ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i ec2_key.pem ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }} "echo 'SSH connection successful'"
+          echo "Testing SSH connection with retries..."
+          for i in {1..5}; do
+            if ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i ec2_key.pem ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }} "echo 'SSH connection successful'"; then
+              echo "SSH connection established on attempt $i"
+              break
+            else
+              echo "SSH connection failed on attempt $i, retrying in 15 seconds..."
+              sleep 15
+            fi
+            
+            if [ $i -eq 5 ]; then
+              echo "Failed to establish SSH connection after 5 attempts"
+              exit 1
+            fi
+          done
 
       - name: Upload updated files to EC2
         run: |
@@ -83,7 +153,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no -i ec2_key.pem ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }} "chmod +x /home/${{ vars.EC2_USER }}/*.sh"
 
   build-and-deploy-docker:
-    needs: detect-changes
+    needs: [detect-changes, manage-ec2-power]
     if: needs.detect-changes.outputs.docker_files_changed == 'true'
     runs-on: ubuntu-latest
     env:
@@ -162,6 +232,24 @@ jobs:
           echo "${{ secrets.EC2_SSH_KEY }}" > ec2_key.pem
           chmod 600 ec2_key.pem
 
+      - name: Test SSH connection with retries
+        run: |
+          echo "Testing SSH connection with retries..."
+          for i in {1..5}; do
+            if ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i ec2_key.pem ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }} "echo 'SSH connection successful'"; then
+              echo "SSH connection established on attempt $i"
+              break
+            else
+              echo "SSH connection failed on attempt $i, retrying in 15 seconds..."
+              sleep 15
+            fi
+            
+            if [ $i -eq 5 ]; then
+              echo "Failed to establish SSH connection after 5 attempts"
+              exit 1
+            fi
+          done
+
       - name: Run deploy script
         env:
           EC2_IP: ${{ secrets.EC2_PUBLIC_IP }}
@@ -169,3 +257,21 @@ jobs:
         run: |
           chmod +x ec2_deploy/deploy.sh
           ./ec2_deploy/deploy.sh
+
+  stop-ec2-instance:
+    needs: [detect-changes, manage-ec2-power, update-ec2-files, build-and-deploy-docker]
+    if: always() && needs.detect-changes.outputs.needs_ec2 == 'true' && needs.manage-ec2-power.outputs.instance_was_running == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Stop EC2 instance
+        run: |
+          echo "Stopping EC2 instance to save costs..."
+          aws ec2 stop-instances --instance-ids ${{ secrets.EC2_INSTANCE_ID }}
+          echo "Stop command sent. Instance will shutdown shortly."
