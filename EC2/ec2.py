@@ -40,10 +40,10 @@ start_time = time.time()
 start_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
 
 # Get environment variables with logging
-player_limit = int(os.environ.get("PLAYER_LIMIT", 100000))
+MAX_PLAYER_COUNT = int(os.environ.get("PLAYER_LIMIT", 100000))
 bucket = os.environ.get("BUCKET_NAME", 'lol-match-jsons')
 
-print(f"Player limit: {player_limit}")
+print(f"Player limit: {MAX_PLAYER_COUNT}")
 print(f"S3 bucket: {bucket}")
 
 # Test API key retrieval
@@ -78,7 +78,7 @@ try:
         if json_response and 'entries' in json_response:
             high_elo_players.extend(json_response['entries'])
             print(f"    Added {len(json_response['entries'])} {rank} players (total: {len(high_elo_players)})")
-            if (len(low_elo_players) + len(high_elo_players)) >= player_limit:
+            if (len(low_elo_players) + len(high_elo_players)) >= MAX_PLAYER_COUNT:
                 print(f"    Reached player limit at {rank}")
                 break
         else:
@@ -87,7 +87,7 @@ except Exception as e:
     logging.error(f"Error during highElo request: {e}. KeyErrors indicate incorrect dictionary returned from API. TypeErrors indicate request exceptions.")
 
 try:
-    if (len(low_elo_players) + len(high_elo_players)) < player_limit:
+    if (len(low_elo_players) + len(high_elo_players)) < MAX_PLAYER_COUNT:
         print("Fetching low elo players...")
         for tier in tiers:
             for division in divisions:
@@ -103,13 +103,13 @@ try:
                         print(f"    Finished {tier} {division}")
                         break
                     
-                    if (len(low_elo_players) + len(high_elo_players)) >= player_limit:
+                    if (len(low_elo_players) + len(high_elo_players)) >= MAX_PLAYER_COUNT:
                         print(f"    Reached player limit in {tier} {division}")
                         break
                 
-                if (len(low_elo_players) + len(high_elo_players)) >= player_limit:
+                if (len(low_elo_players) + len(high_elo_players)) >= MAX_PLAYER_COUNT:
                     break
-            if (len(low_elo_players) + len(high_elo_players)) >= player_limit:
+            if (len(low_elo_players) + len(high_elo_players)) >= MAX_PLAYER_COUNT:
                 break
 
 except Exception as e:
@@ -138,6 +138,7 @@ for player in low_elo_players:
         'lp': player.get('leaguePoints', 0)
     })
 
+# Limit player list to the environment-defined max (e.g., 100 for test, 100000 for prod)
 ranked_players = normalized_high_elo + normalized_low_elo
 
 player_rank_map = {
@@ -149,6 +150,7 @@ player_rank_map = {
     for player in ranked_players if 'puuid' in player
 }
 
+ranked_players = ranked_players[:MAX_PLAYER_COUNT]
 print(f"Created rank mapping for {len(player_rank_map)} players")
 print("Fetching match lists...")
 
