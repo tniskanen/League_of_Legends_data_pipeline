@@ -2,7 +2,7 @@ import time
 import logging
 import sys
 import os
-import psutil 
+import psutil  
 
 # Configure logging to output to both file and stdout (for Docker logs)
 logging.basicConfig(
