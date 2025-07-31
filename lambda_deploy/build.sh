@@ -11,7 +11,7 @@ fi
 
 echo "🚀 Starting Lambda Docker image build and push process..."
 
-# Load environment variables from variables.env (safer method)
+# Load environment variables from lambda.env (safer method)
 load_env_file() {
   local env_file="$1"
   if [ -f "$env_file" ]; then
@@ -32,7 +32,7 @@ load_env_file() {
 }
 
 # FIXED: Actually load the environment file
-ENV_FILE="${ENV_FILE:-variables.env}"
+ENV_FILE="${ENV_FILE:-lambda.env}"
 if ! load_env_file "$ENV_FILE"; then
   echo "❌ Error: Environment file '$ENV_FILE' not found. Please create it with required variables."
   exit 1
