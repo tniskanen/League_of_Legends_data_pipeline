@@ -353,24 +353,24 @@ load_environment_vars() {
     # Get the directory where the script is located
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     
-    # Try to load variables.env from multiple locations
-    if [ -f "$SCRIPT_DIR/variables.env" ]; then
+    # Try to load ec2.env from multiple locations
+    if [ -f "$SCRIPT_DIR/ec2.env" ]; then
         set -o allexport
-        source "$SCRIPT_DIR/variables.env"
+        source "$SCRIPT_DIR/ec2.env"
         set +o allexport
-        echo "✅ Environment variables loaded from $SCRIPT_DIR/variables.env"
-    elif [ -f "./variables.env" ]; then
+        echo "✅ Environment variables loaded from $SCRIPT_DIR/ec2.env"
+    elif [ -f "./ec2.env" ]; then
         set -o allexport
-        source ./variables.env
+        source ./ec2.env
         set +o allexport
-        echo "✅ Environment variables loaded from ./variables.env"
-    elif [ -f "/home/ec2-user/variables.env" ]; then
+        echo "✅ Environment variables loaded from ./ec2.env"
+    elif [ -f "/home/ec2-user/ec2.env" ]; then
         set -o allexport
-        source /home/ec2-user/variables.env
+        source /home/ec2-user/ec2.env
         set +o allexport
-        echo "✅ Environment variables loaded from /home/ec2-user/variables.env"
+        echo "✅ Environment variables loaded from /home/ec2-user/ec2.env"
     else
-        echo "⚠️ variables.env file not found, using defaults and environment"
+        echo "⚠️ ec2.env file not found, using defaults and environment"
     fi
     
     # Get region from instance metadata
