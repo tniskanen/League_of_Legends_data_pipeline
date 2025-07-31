@@ -43,7 +43,7 @@ jobs:
           echo "===================="
           
           # Detect EC2 file changes
-          if grep -Eq '^ec2_deploy/(starter\.sh|run\.sh)$|^variables\.env$' changed_files.txt; then
+          if grep -Eq '^ec2_deploy/(starter\.sh|run\.sh)$|^ec2\.env$' changed_files.txt; then
             echo "✅ EC2 files changed detected"
             ec2_files_changed=true
             echo "ec2_files_changed=true" >> $GITHUB_OUTPUT
@@ -64,7 +64,7 @@ jobs:
           
           # Debug info
           echo "=== DEBUG INFO ==="
-          echo "EC2 pattern: '^ec2_deploy/(starter\.sh|run\.sh)$|^variables\.env$'"
+          echo "EC2 pattern: '^ec2_deploy/(starter\.sh|run\.sh)$|^ec2\.env$'"
           echo "Docker pattern: '^(docker/ec2|EC2/|ec2_deploy/(build\.sh|deploy\.sh)|Utils/|requirements\.txt|setup\.py|__init__\.py|\.gitignore|\.dockerignore|Dockerfile)'"
           echo "ec2_files_changed: $ec2_files_changed"
           echo "docker_files_changed: $docker_files_changed"
@@ -159,7 +159,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no -i ec2_key.pem ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }} "mkdir -p /home/${{ vars.EC2_USER }}"
           
           scp -o StrictHostKeyChecking=no -i ec2_key.pem ec2_deploy/starter.sh ec2_deploy/run.sh ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }}:/home/${{ vars.EC2_USER }}/
-          scp -o StrictHostKeyChecking=no -i ec2_key.pem variables.env ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }}:/home/${{ vars.EC2_USER }}/
+          scp -o StrictHostKeyChecking=no -i ec2_key.pem ec2.env ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }}:/home/${{ vars.EC2_USER }}/
           
           ssh -o StrictHostKeyChecking=no -i ec2_key.pem ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }} "chmod +x /home/${{ vars.EC2_USER }}/*.sh"
 
