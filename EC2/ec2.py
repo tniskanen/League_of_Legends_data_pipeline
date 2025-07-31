@@ -238,6 +238,7 @@ for i, thread in enumerate(active_threads):
     thread.join()
 
 print("All uploads completed!")
+print(f"Matches with no data: {no_data}")
 
 end_time = time.time()
 end_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
