@@ -177,8 +177,9 @@ except Exception as e:
 uniqueMatches = set(matchesList)
 print(f"Found {len(uniqueMatches)} unique matches to process")
 
-upload = 0
+successful_matches = 0
 total = 0
+no_data = 0
 matches = []
 active_threads = []
 
@@ -192,6 +193,7 @@ try:
             
         temp_data = match(match_id, API_KEY)
         if handle_api_response(temp_data, func_name='match') is None:
+            no_data += 1
             continue
             
         for participant in temp_data['info']['participants']:
@@ -208,16 +210,17 @@ try:
                 participant['lp'] = None
 
         matches.append(temp_data)
-        upload += 1
+        successful_matches += 1
         total += 1
-        
-        if upload >= 500:
-            print(f"Uploading batch of {upload} matches to S3 (total processed: {total})")
+
+        # Upload every 500 successful matches
+        if successful_matches % 500 == 0:
+            print(f"Uploading batch of {successful_matches} matches to S3 (total processed: {total})")
             thread = send_json(matches.copy(), bucket)  # Explicit copy
             if thread:
                 active_threads.append(thread)
-            upload = 0
             matches = []
+
 except Exception as e:
     logging.error(f"Error during match processing: {e}")
 
