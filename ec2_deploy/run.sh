@@ -69,6 +69,75 @@ EOF
     exit "$exit_code"
 }
 
+# Function to send logs to CloudWatch
+send_logs_to_cloudwatch() {
+    local log_file="$1"
+    local log_group="$2"
+    local instance_id="$3"
+    
+    if [ "${SEND_LOGS_TO_CLOUDWATCH:-false}" != "true" ]; then
+        echo "📋 CloudWatch logging disabled, skipping log upload"
+        return 0
+    fi
+    
+    echo "📤 Sending logs to CloudWatch..."
+    
+    # Create log stream name with timestamp
+    local log_stream="container-$(date +%Y%m%d-%H%M%S)-${instance_id}"
+    
+    # Check if log group exists, create if not
+    if ! aws logs describe-log-groups --log-group-name-prefix "$log_group" --query "logGroups[?logGroupName=='$log_group'].logGroupName" --output text | grep -q "$log_group"; then
+        echo "📝 Creating CloudWatch log group: $log_group"
+        aws logs create-log-group --log-group-name "$log_group" || {
+            echo "⚠️ Failed to create log group, continuing without CloudWatch logs"
+            return 1
+        }
+        
+        # Set retention policy
+        aws logs put-retention-policy --log-group-name "$log_group" --retention-in-days "${CLOUDWATCH_RETENTION_DAYS:-7}" || {
+            echo "⚠️ Failed to set retention policy"
+        }
+    fi
+    
+    # Create log stream
+    echo "📝 Creating log stream: $log_stream"
+    aws logs create-log-stream --log-group-name "$log_group" --log-stream-name "$log_stream" || {
+        echo "⚠️ Failed to create log stream, continuing without CloudWatch logs"
+        return 1
+    }
+    
+    # Upload log file to CloudWatch
+    if [ -f "$log_file" ]; then
+        echo "📤 Uploading log file to CloudWatch..."
+        
+        # Convert log file to CloudWatch format and upload
+        local temp_events_file="/tmp/cloudwatch_events.json"
+        
+        # Create events in CloudWatch format
+        cat "$log_file" | while IFS= read -r line; do
+            echo "{\"timestamp\": $(date +%s)000, \"message\": \"$line\"}"
+        done > "$temp_events_file"
+        
+        # Upload to CloudWatch
+        aws logs put-log-events \
+            --log-group-name "$log_group" \
+            --log-stream-name "$log_stream" \
+            --log-events file://"$temp_events_file" || {
+            echo "⚠️ Failed to upload logs to CloudWatch"
+            rm -f "$temp_events_file"
+            return 1
+        }
+        
+        rm -f "$temp_events_file"
+        echo "✅ Logs successfully uploaded to CloudWatch"
+        echo "   Log Group: $log_group"
+        echo "   Log Stream: $log_stream"
+    else
+        echo "⚠️ Log file not found: $log_file"
+        return 1
+    fi
+}
+
 # Function to shutdown EC2 instance
 shutdown_ec2_instance() {
     local delay_seconds=${1:-0}
@@ -271,6 +340,9 @@ load_environment_vars() {
     export AUTO_CLEANUP="${AUTO_CLEANUP:-true}"
     export CLEANUP_VOLUMES="${CLEANUP_VOLUMES:-false}"
     export AUTO_SHUTDOWN="${AUTO_SHUTDOWN:-true}"
+    export SEND_LOGS_TO_CLOUDWATCH="${SEND_LOGS_TO_CLOUDWATCH:-false}"
+    export CLOUDWATCH_LOG_GROUP="${CLOUDWATCH_LOG_GROUP:-/aws/ec2/containers/default}"
+    export CLOUDWATCH_RETENTION_DAYS="${CLOUDWATCH_RETENTION_DAYS:-7}"
     
     echo "🔐 Loading sensitive variables from SSM..."
 
@@ -438,27 +510,34 @@ EOF
         handle_error 5 "Failed to start container"
     fi
     
-    # Follow logs if requested
-    if [ "${FOLLOW_LOGS:-true}" = "true" ]; then
-        echo "📋 Following container logs... (Container will continue running)"
-        $DOCKER_CMD logs -f ${CONTAINER_NAME} &
-        LOGS_PID=$!
-        
-        # Handle Ctrl+C gracefully
-        trap "kill $LOGS_PID 2>/dev/null || true; echo '📋 Stopped following logs, container still running'" INT
-        wait $LOGS_PID 2>/dev/null || true
-        trap - INT
-    fi
-    
-    # Wait for container completion (NO TIMEOUT - will wait indefinitely)
+    # Wait for container completion with proper cleanup
     if [ "${WAIT_FOR_EXIT:-true}" = "true" ]; then
-        echo "⏳ Waiting for container to complete (no timeout)..."
+        echo "⏳ Waiting for container to complete..."
         
-        # Simple wait with periodic status updates every 5 minutes
-        while $DOCKER_CMD ps -q -f "name=${CONTAINER_NAME}" | grep -q .; do
-            sleep 300  # 5 minutes
+        # Start log following in background if requested
+        if [ "${FOLLOW_LOGS:-true}" = "true" ]; then
+            echo "📋 Following container logs in background..."
+            $DOCKER_CMD logs -f ${CONTAINER_NAME} &
+            LOGS_PID=$!
+        fi
+        
+        # Wait for container to exit with more frequent checks
+        echo "🔍 Monitoring container status..."
+        while true; do
+            if ! $DOCKER_CMD ps -q -f "name=${CONTAINER_NAME}" | grep -q .; then
+                echo "✅ Container has exited"
+                break
+            fi
+            sleep 10  # Check every 10 seconds
             echo "⏱️ Container still running at $(date)..."
         done
+        
+        # Kill log following process if it's still running
+        if [ "${FOLLOW_LOGS:-true}" = "true" ] && [ -n "$LOGS_PID" ]; then
+            echo "📋 Stopping log following process..."
+            kill $LOGS_PID 2>/dev/null || true
+            wait $LOGS_PID 2>/dev/null || true
+        fi
         
         # Get final status
         EXIT_CODE=$($DOCKER_CMD inspect ${CONTAINER_NAME} --format='{{.State.ExitCode}}')
@@ -470,6 +549,13 @@ EOF
             $DOCKER_CMD logs --tail 50 ${CONTAINER_NAME}
         fi
         
+        # Send logs to CloudWatch if enabled
+        if [ "${SEND_LOGS_TO_CLOUDWATCH:-false}" = "true" ]; then
+            # Get instance ID for log stream naming
+            INSTANCE_ID=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || echo "unknown")
+            send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"
+        fi
+        
         # Update final status
         cat > "/tmp/container_status.json" << EOF
 {
@@ -477,7 +563,8 @@ EOF
     "pid": $$,
     "container_id": "$CONTAINER_ID",
     "exit_code": $EXIT_CODE,
-    "end_time": "$(date -Iseconds)"
+    "end_time": "$(date -Iseconds)",
+    "cloudwatch_logs": "${SEND_LOGS_TO_CLOUDWATCH:-false}"
 }
 EOF
         
