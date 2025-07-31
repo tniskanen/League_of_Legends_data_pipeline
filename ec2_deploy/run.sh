@@ -121,21 +121,62 @@ send_logs_to_cloudwatch() {
         
         # Convert log file to CloudWatch format and upload
         local temp_events_file="/tmp/cloudwatch_events.json"
+        local current_timestamp=$(date +%s)000
         
-        # Create events in CloudWatch format
-        cat "$log_file" | while IFS= read -r line; do
-            echo "{\"timestamp\": $(date +%s)000, \"message\": \"$line\"}"
-        done > "$temp_events_file"
+        # Create the log events file in the correct format for put-log-events
+        # The format should be: [{"timestamp": 1234567890000, "message": "log message"}]
+        echo "[" > "$temp_events_file"
+        local first_line=true
+        local line_count=0
         
-        # Upload to CloudWatch
+        while IFS= read -r line; do
+            # Skip empty lines
+            [ -z "$line" ] && continue
+            
+            # Escape quotes and backslashes in the message
+            escaped_line=$(echo "$line" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
+            
+            if [ "$first_line" = true ]; then
+                first_line=false
+            else
+                echo "," >> "$temp_events_file"
+            fi
+            
+            echo "{\"timestamp\": $current_timestamp, \"message\": \"$escaped_line\"}" >> "$temp_events_file"
+            ((line_count++))
+        done < "$log_file"
+        
+        echo "]" >> "$temp_events_file"
+        
+        # Check if we have any content
+        if [ "$line_count" -eq 0 ]; then
+            echo "⚠️ No log content to upload"
+            rm -f "$temp_events_file"
+            return 0
+        fi
+        
+        # Validate JSON format
+        if ! python3 -m json.tool "$temp_events_file" > /dev/null 2>&1; then
+            echo "❌ Invalid JSON format generated"
+            echo "📋 Debug: JSON file content (first 10 lines):"
+            head -10 "$temp_events_file"
+            rm -f "$temp_events_file"
+            return 1
+        fi
+        
+        # Upload to CloudWatch using the correct format
         aws logs put-log-events \
             --log-group-name "$log_group" \
             --log-stream-name "$log_stream" \
             --log-events file://"$temp_events_file" || {
             echo "⚠️ Failed to upload logs to CloudWatch"
+            echo "📋 Debug: JSON file content (first 10 lines):"
+            head -10 "$temp_events_file"
             rm -f "$temp_events_file"
             return 1
         }
+        
+        rm -f "$temp_events_file"
         
         rm -f "$temp_events_file"
         echo "✅ Logs successfully uploaded to CloudWatch"
