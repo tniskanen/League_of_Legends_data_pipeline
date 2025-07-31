@@ -86,16 +86,19 @@ send_logs_to_cloudwatch() {
     local log_stream="container-$(date +%Y%m%d-%H%M%S)-${instance_id}"
     
     # Check if log group exists, create if not
-    if ! aws logs describe-log-groups --log-group-name-prefix "$log_group" --query "logGroups[?logGroupName=='$log_group'].logGroupName" --output text | grep -q "$log_group"; then
+    echo "📝 Checking if CloudWatch log group exists: $log_group"
+    if aws logs describe-log-groups --log-group-name-prefix "$log_group" --query "logGroups[?logGroupName=='$log_group'].logGroupName" --output text 2>/dev/null | grep -q "$log_group"; then
+        echo "✅ Log group already exists: $log_group"
+    else
         echo "📝 Creating CloudWatch log group: $log_group"
-        aws logs create-log-group --log-group-name "$log_group" || {
-            echo "⚠️ Failed to create log group, continuing without CloudWatch logs"
-            return 1
+        aws logs create-log-group --log-group-name "$log_group" 2>/dev/null || {
+            echo "⚠️ Log group may already exist, continuing..."
         }
         
         # Set retention policy
-        aws logs put-retention-policy --log-group-name "$log_group" --retention-in-days "${CLOUDWATCH_RETENTION_DAYS:-7}" || {
-            echo "⚠️ Failed to set retention policy"
+        echo "📝 Setting retention policy to ${CLOUDWATCH_RETENTION_DAYS:-7} days"
+        aws logs put-retention-policy --log-group-name "$log_group" --retention-in-days "${CLOUDWATCH_RETENTION_DAYS:-7}" 2>/dev/null || {
+            echo "⚠️ Failed to set retention policy, continuing anyway"
         }
     fi
     
@@ -553,7 +556,12 @@ EOF
         if [ "${SEND_LOGS_TO_CLOUDWATCH:-false}" = "true" ]; then
             # Get instance ID for log stream naming
             INSTANCE_ID=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || echo "unknown")
-            send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"
+            echo "📤 Attempting to send logs to CloudWatch..."
+            if send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"; then
+                echo "✅ CloudWatch logging completed successfully"
+            else
+                echo "⚠️ CloudWatch logging failed, but continuing with cleanup"
+            fi
         fi
         
         # Update final status
@@ -594,6 +602,18 @@ EOF
         else
             echo "⚠️ Auto-shutdown disabled. Instance will remain running."
         fi
+        
+        # Emergency fallback: If auto-shutdown fails, force shutdown after 2 minutes
+        echo "⏰ Setting emergency shutdown timer (2 minutes) in case auto-shutdown fails..."
+        (
+            sleep 120  # 2 minutes
+            echo "🚨 EMERGENCY SHUTDOWN: Auto-shutdown may have failed, forcing shutdown..."
+            shutdown_ec2_instance 0
+        ) &
+        EMERGENCY_PID=$!
+        
+        # Store emergency PID for cleanup
+        echo "$EMERGENCY_PID" > "/tmp/emergency_shutdown.pid"
         
         return $EXIT_CODE
     fi
