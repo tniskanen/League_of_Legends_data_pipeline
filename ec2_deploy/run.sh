@@ -571,15 +571,42 @@ EOF
             LOGS_PID=$!
         fi
         
-        # Wait for container to exit with more frequent checks
+        # Wait for container to exit with reasonable monitoring for long-running containers
         echo "🔍 Monitoring container status..."
+        local check_count=0
+        local check_interval=30  # Start with 30 seconds
+        local log_interval=120   # Log status every 2 minutes initially
+        local next_log_time=0
+        
         while true; do
             if ! $DOCKER_CMD ps -q -f "name=${CONTAINER_NAME}" | grep -q .; then
                 echo "✅ Container has exited"
                 break
             fi
-            sleep 10  # Check every 10 seconds
-            echo "⏱️ Container still running at $(date)..."
+            
+            ((check_count++))
+            local current_time=$(date +%s)
+            
+            # Log status at reasonable intervals
+            if [ "$current_time" -ge "$next_log_time" ]; then
+                local runtime_minutes=$((check_count * check_interval / 60))
+                if [ "$runtime_minutes" -lt 60 ]; then
+                    echo "⏱️ Container still running (${runtime_minutes}m) at $(date '+%H:%M:%S')"
+                    next_log_time=$((current_time + log_interval))  # Every 2 minutes for first hour
+                else
+                    local runtime_hours=$((runtime_minutes / 60))
+                    echo "⏱️ Container still running (${runtime_hours}h ${runtime_minutes}m) at $(date '+%H:%M:%S')"
+                    next_log_time=$((current_time + 900))  # Every 15 minutes after first hour
+                fi
+                
+                # Increase intervals for very long runs
+                if [ "$runtime_minutes" -gt 180 ]; then  # After 3 hours
+                    check_interval=60     # Check every minute
+                    log_interval=1800     # Log every 30 minutes
+                fi
+            fi
+            
+            sleep "$check_interval"
         done
         
         # Kill log following process if it's still running
