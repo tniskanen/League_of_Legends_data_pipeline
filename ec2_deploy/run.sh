@@ -82,8 +82,14 @@ send_logs_to_cloudwatch() {
     
     echo "📤 Sending logs to CloudWatch..."
     
-    # Create log stream name with timestamp
-    local log_stream="container-$(date +%Y%m%d-%H%M%S)-${instance_id}"
+    # Create log stream name with timestamp and validated instance ID
+    local timestamp=$(date +%Y%m%d-%H%M%S)
+    local log_stream="container-${timestamp}-${instance_id}"
+    
+    # Ensure log stream name is valid (no special characters)
+    log_stream=$(echo "$log_stream" | sed 's/[^a-zA-Z0-9_-]//g')
+    
+    echo "📝 Creating log stream: $log_stream"
     
     # Check if log group exists, create if not
     echo "📝 Checking if CloudWatch log group exists: $log_group"
@@ -159,7 +165,7 @@ shutdown_ec2_instance() {
     local token
     token=$(curl -X PUT "http://169.254.169.254/latest/api/token" \
         -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" \
-        --connect-timeout 5 --silent) || {
+        --connect-timeout 5 --max-time 10 --silent) || {
         echo "⚠️ Failed to get IMDSv2 token, trying without token..."
         token=""
     }
@@ -554,8 +560,18 @@ EOF
         
         # Send logs to CloudWatch if enabled
         if [ "${SEND_LOGS_TO_CLOUDWATCH:-false}" = "true" ]; then
-            # Get instance ID for log stream naming
-            INSTANCE_ID=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || echo "unknown")
+            # Get instance ID for log stream naming with better error handling
+            echo "🔍 Getting instance ID from metadata service..."
+            INSTANCE_ID=$(curl -s --connect-timeout 5 --max-time 10 http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null)
+            
+            # Validate instance ID (should be i-xxxxxxxxx format)
+            if [[ "$INSTANCE_ID" =~ ^i-[a-f0-9]+$ ]]; then
+                echo "✅ Instance ID retrieved: $INSTANCE_ID"
+            else
+                echo "⚠️ Failed to get valid instance ID, using timestamp instead"
+                INSTANCE_ID="unknown-$(date +%Y%m%d-%H%M%S)"
+            fi
+            
             echo "📤 Attempting to send logs to CloudWatch..."
             if send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"; then
                 echo "✅ CloudWatch logging completed successfully"
