@@ -201,6 +201,8 @@ def handle_api_response(response, func_name, player_id=None):
     if isinstance(response, dict) and 'status' in response:
         logging.error(f"Error from {func_name} function: {response['status']['status_code']} for player {player_id}")
         return None
+    else:
+        return response
     
 def champion_mastery(puuid, championid, key, retries=3):
     mastery = None
