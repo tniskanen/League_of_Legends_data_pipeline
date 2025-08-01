@@ -61,7 +61,7 @@ def lambda_handler(event):
                 if 'rank' in game:
                     temp_player['division'] = game['rank']
 
-                if 'leaguePoints' in game:
+                if 'lp' in game:
                     temp_player['lp'] = game['lp']
 
                 temp_player['dataVersion'] = game['metadata']['dataVersion']
@@ -71,6 +71,10 @@ def lambda_handler(event):
                 temp_player['gameDuration'] = game['info']['gameDuration']
                 temp_player['gameVersion'] = game['info']['gameVersion']
                 temp_player['mapId'] = game['info']['mapId']
+                
+                # Add source from game data
+                if 'source' in game:
+                    temp_player['source'] = game['source']
                 
                 #sorting data for seperate tables, create join keys, add temp dictionaries to data lists
                 dicts = add_join_keys(split_json(temp_player))
