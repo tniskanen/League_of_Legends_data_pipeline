@@ -16,7 +16,7 @@ handler = logging.StreamHandler()
 logger.addHandler(handler)
 
 
-def lambda_handler(event):
+def lambda_handler(event, context):
     
     #loading environment variables
     DB_HOST = get_api_key_from_ssm("DB_HOST-dev")
