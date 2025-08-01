@@ -408,13 +408,15 @@ load_environment_vars() {
         handle_error 2 "Missing required variables (AWS_ACCOUNT_ID, REGION, REPO_NAME)"
     fi
     
-    # Determine RUN_MODE
+    # Determine RUN_MODE and set corresponding variables
     if [ "${RUN_MODE}" == "test" ]; then
         export PLAYER_LIMIT=100
         export BUCKET_NAME='lol-match-test'
+        export SOURCE='test'
     else
         export PLAYER_LIMIT=100000
         export BUCKET_NAME='lol-match-jsons'
+        export SOURCE='prod'
     fi 
 
     # Construct ECR URI
@@ -469,6 +471,7 @@ setup_container_params() {
     ENV_VARS="${ENV_VARS} -e AWS_REGION=${REGION}"
     ENV_VARS="${ENV_VARS} -e PLAYER_LIMIT=${PLAYER_LIMIT}"
     ENV_VARS="${ENV_VARS} -e BUCKET_NAME=${BUCKET_NAME}"
+    ENV_VARS="${ENV_VARS} -e SOURCE=${SOURCE}"
     
     # Extra Docker arguments
     EXTRA_ARGS="${DOCKER_RUN_ARGS:-}"
