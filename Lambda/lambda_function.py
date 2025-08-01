@@ -90,7 +90,7 @@ def lambda_handler(event, context):
             database=DB_NAME
         )
 
-        cursor = conn.cursor()
+        cursor = conn.cursor() 
 
         # Define the batch size
         batch_size = 200
