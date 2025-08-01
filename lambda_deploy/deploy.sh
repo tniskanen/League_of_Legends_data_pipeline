@@ -40,11 +40,25 @@ fi
 
 echo "✅ Loaded environment variables from $ENV_FILE"
 
-# Ensure all required variables are present
-REQUIRED_VARS=(AWS_ACCOUNT_ID REGION REPO_NAME LAMBDA_FUNCTION_NAME LAMBDA_ROLE_ARN)
+# Get AWS Account ID from AWS CLI
+echo "🔍 Getting AWS Account ID from AWS CLI..."
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null)
+if [ -z "$AWS_ACCOUNT_ID" ]; then
+  echo "❌ Error: Could not get AWS Account ID from AWS CLI. Please check your credentials."
+  exit 1
+fi
+echo "✅ AWS Account ID: $AWS_ACCOUNT_ID"
+
+# Set default values for variables that might come from environment or GitHub
+REGION="${REGION:-us-east-1}"
+REPO_NAME_LAMBDA="${REPO_NAME_LAMBDA:-lambda-docker-image}"
+LAMBDA_FUNCTION_NAME="${LAMBDA_FUNCTION_NAME:-lol_ETL}"
+
+# Ensure required variables are present (these should come from GitHub secrets/vars)
+REQUIRED_VARS=(REGION REPO_NAME_LAMBDA LAMBDA_FUNCTION_NAME LAMBDA_ROLE_ARN)
 for var in "${REQUIRED_VARS[@]}"; do
   if [ -z "${!var}" ]; then
-    echo "❌ Error: $var is not set in $ENV_FILE"
+    echo "❌ Error: $var is not set. This should be provided by GitHub Actions or environment."
     exit 1
   fi
 done
