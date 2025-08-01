@@ -1,0 +1,141 @@
+name: Deploy Lambda Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  detect-lambda-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      lambda_files_changed: ${{ steps.changed.outputs.lambda_files_changed }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for Lambda-related changes
+        id: changed
+        run: |
+          echo "Checking for Lambda file changes..."
+          
+          # Handle first commit case
+          if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+            echo "First commit detected, treating all files as changed"
+            echo "lambda_files_changed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Get changed files
+          git diff --name-only ${{ github.event.before }} ${{ github.sha }} > changed_files.txt
+          echo "=== CHANGED FILES ==="
+          cat changed_files.txt
+          echo "===================="
+          
+          # Detect Lambda-related changes
+          if grep -Eiq '^(docker/lambda|Lambda/|lambda_deploy/|Utils/|lambda\.env|__init__\.py|setup\.py|requirements\.txt|\.dockerignore|\.gitignore)' changed_files.txt; then
+            echo "✅ Lambda files changed detected"
+            echo "lambda_files_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ No Lambda files changed"
+            echo "lambda_files_changed=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Debug info
+          echo "=== DEBUG INFO ==="
+          echo "Lambda pattern: '^(docker/lambda|Lambda/|lambda_deploy/|Utils/|lambda\.env|__init__\.py|setup\.py|requirements\.txt|\.dockerignore|\.gitignore)'"
+          echo "lambda_files_changed: $(grep lambda_files_changed $GITHUB_OUTPUT | cut -d'=' -f2)"
+
+  build-and-deploy-lambda:
+    needs: detect-lambda-changes
+    if: needs.detect-lambda-changes.outputs.lambda_files_changed == 'true'
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      ECR_REGISTRY: ${{ secrets.ECR_REGISTRY_LAMBDA }}
+      ECR_REPOSITORY_LAMBDA: ${{ secrets.ECR_REPOSITORY_LAMBDA }}
+      CLEANUP: ${{ vars.CLEANUP }}
+      DEBUG: ${{ vars.DEBUG }}
+      REGION: ${{ secrets.AWS_REGION }}
+      REPO_NAME_LAMBDA: ${{ vars.REPO_NAME_LAMBDA }}
+      LAMBDA_FUNCTION_NAME: ${{ vars.LAMBDA_FUNCTION_NAME }}
+      LAMBDA_ROLE_ARN: ${{ secrets.LAMBDA_ROLE_ARN }}
+      BUILD_ARGS: ${{ vars.BUILD_ARGS }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Validate Lambda environment variables
+        run: |
+          echo "Validating required Lambda environment variables..."
+          required_vars=("ECR_REGISTRY" "AWS_REGION" "ECR_REPOSITORY_LAMBDA" "LAMBDA_FUNCTION_NAME" "LAMBDA_ROLE_ARN")
+          for var in "${required_vars[@]}"; do
+            if [ -z "${!var}" ]; then
+              echo "❌ Error: $var is not set"
+              exit 1
+            fi
+          done
+          echo "✅ All required Lambda variables are set"
+
+      - name: Debug Lambda environment variables
+        run: |
+          echo "🔍 Debugging Lambda environment variables:"
+          echo "AWS_REGION: ${AWS_REGION}"
+          echo "ECR_REGISTRY: ${ECR_REGISTRY}"
+          echo "ECR_REPOSITORY_LAMBDA: ${ECR_REPOSITORY_LAMBDA}"
+          echo "LAMBDA_FUNCTION_NAME: ${LAMBDA_FUNCTION_NAME}"
+          echo "Expected ECR URI: ${ECR_REGISTRY}/${ECR_REPOSITORY_LAMBDA}:latest"
+          
+          if [[ "${ECR_REGISTRY}" =~ ^([0-9]{12})\.dkr\.ecr\.([^.]+)\.amazonaws\.com$ ]]; then
+            echo "Extracted AWS Account ID: ${BASH_REMATCH[1]}"
+            echo "Extracted Region: ${BASH_REMATCH[2]}"
+          else
+            echo "⚠️ ECR_REGISTRY format doesn't match expected pattern"
+          fi
+          
+          echo "🔍 Testing AWS connectivity:"
+          aws sts get-caller-identity
+          
+          echo "🔍 Testing ECR repository access:"
+          aws ecr describe-repositories --repository-names "${ECR_REPOSITORY_LAMBDA}" --region "${AWS_REGION}" || echo "Repository may not exist yet"
+
+      - name: Run Lambda build script
+        run: |
+          chmod +x lambda_deploy/build.sh
+          ./lambda_deploy/build.sh
+
+      - name: Run Lambda deploy script
+        run: |
+          chmod +x lambda_deploy/deploy.sh
+          ./lambda_deploy/deploy.sh
+
+      - name: Verify Lambda deployment
+        run: |
+          echo "🔍 Verifying Lambda function deployment..."
+          aws lambda get-function \
+            --function-name "${LAMBDA_FUNCTION_NAME}" \
+            --region "${AWS_REGION}" \
+            --query '{
+              FunctionName: Configuration.FunctionName,
+              State: Configuration.State,
+              LastModified: Configuration.LastModified,
+              CodeSize: Configuration.CodeSize,
+              MemorySize: Configuration.MemorySize,
+              Timeout: Configuration.Timeout,
+              ImageUri: Code.ImageUri
+            }' \
+            --output table
+          
+          echo "✅ Lambda deployment verification complete"
