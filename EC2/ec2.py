@@ -42,6 +42,7 @@ start_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
 # Get environment variables with logging
 MAX_PLAYER_COUNT = int(os.environ.get("PLAYER_LIMIT", 100000))
 bucket = os.environ.get("BUCKET_NAME", 'lol-match-jsons')
+source = os.environ.get("SOURCE", 'NA')
 
 print(f"Player limit: {MAX_PLAYER_COUNT}")
 print(f"S3 bucket: {bucket}")
@@ -209,6 +210,7 @@ try:
                 participant['rank'] = None
                 participant['lp'] = None
 
+        temp_data['source'] = source
         matches.append(temp_data)
         successful_matches += 1
         total += 1
