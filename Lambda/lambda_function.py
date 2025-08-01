@@ -19,10 +19,16 @@ logger.addHandler(handler)
 def lambda_handler(event, context):
     
     #loading environment variables
+    logger.info("Loading database credentials from SSM...")
     DB_HOST = get_api_key_from_ssm("DB_HOST-dev")
     DB_NAME = get_api_key_from_ssm("DB_NAME-dev")
     DB_USER = get_api_key_from_ssm("DB_USER")
     DB_PASSWORD = get_api_key_from_ssm("DB_PASSWORD-dev")
+    
+    logger.info(f"DB_HOST: {DB_HOST}")
+    logger.info(f"DB_NAME: {DB_NAME}")
+    logger.info(f"DB_USER: {DB_USER}")
+    logger.info(f"DB_PASSWORD: {'*' * len(DB_PASSWORD) if DB_PASSWORD else 'None'}")  # Mask password
 
     s3_client = boto3.client('s3')
     
@@ -83,12 +89,19 @@ def lambda_handler(event, context):
                 tables['legendaryItem'].append(dicts[2])
                 tables['perkMissionStats'].append(dicts[3])
         
-        conn = mysql.connector.connect(
-            host=DB_HOST,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            database=DB_NAME
-        )
+        logger.info("Attempting to connect to MySQL database...")
+        try:
+            conn = mysql.connector.connect(
+                host=DB_HOST,
+                user=DB_USER,
+                password=DB_PASSWORD,
+                database=DB_NAME,
+                auth_plugin='mysql_native_password'  # Force native password
+            )
+            logger.info("✅ Successfully connected to MySQL database")
+        except mysql.connector.Error as conn_err:
+            logger.error(f"❌ MySQL connection failed: {conn_err}")
+            raise
 
         cursor = conn.cursor() 
 
