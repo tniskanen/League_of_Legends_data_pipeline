@@ -109,18 +109,6 @@ def send_json(data, bucket, custom_date=None):
     print(f"Queued upload: {match_count} matches -> {s3_key}")
     return upload_thread
 
-def update_state(bucket, key, data):
-    """
-    Uploads the given data as a JSON file to the specified S3 bucket and key.
-    Args:
-        bucket (str): S3 bucket name
-        key (str): S3 object key
-        data (dict): Data to upload (will be JSON-encoded)
-    """
-    json_data = json.dumps(data)
-    upload_to_s3(bucket, key, json_data)
-    print(f"{key} updated")
-
 def get_parameter_from_ssm(parameter_name):
     """
     Retrieves a parameter from AWS SSM Parameter Store.
