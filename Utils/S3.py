@@ -38,14 +38,14 @@ def test_aws_credentials():
         print(f"AWS credential test failed: {str(e)}")
         return False
 
-def upload_to_s3(bucket, key, data, match_count):
+def upload_to_s3(bucket, key, data):
     """Enhanced upload function with better logging"""
     try:
         region = os.environ.get('AWS_REGION', 'us-east-2')
         s3 = boto3.client('s3', region_name=region)
         
         s3.put_object(Bucket=bucket, Key=key, Body=data)
-        print(f"✓ Successfully uploaded: {key} ({match_count} matches)")
+        print(f"✓ Successfully uploaded: {key}")
         
     except Exception as e:
         print(f"✗ Upload failed: {key} - Error: {str(e)}")
@@ -108,6 +108,18 @@ def send_json(data, bucket, custom_date=None):
 
     print(f"Queued upload: {match_count} matches -> {s3_key}")
     return upload_thread
+
+def update_state(bucket, key, data):
+    """
+    Uploads the given data as a JSON file to the specified S3 bucket and key.
+    Args:
+        bucket (str): S3 bucket name
+        key (str): S3 object key
+        data (dict): Data to upload (will be JSON-encoded)
+    """
+    json_data = json.dumps(data)
+    upload_to_s3(bucket, key, json_data)
+    print(f"{key} updated")
 
 def get_parameter_from_ssm(parameter_name):
     """
