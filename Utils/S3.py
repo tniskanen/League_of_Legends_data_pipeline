@@ -109,20 +109,13 @@ def send_json(data, bucket, custom_date=None):
     print(f"Queued upload: {match_count} matches -> {s3_key}")
     return upload_thread
 
-def get_api_key_from_ssm(parameter_name=None):
+def get_parameter_from_ssm(parameter_name):
     """
-    Retrieves the API key from AWS SSM Parameter Store.
+    Retrieves a parameter from AWS SSM Parameter Store.
     
-    :param parameter_name: The name of the parameter stored in SSM, or None to use environment variable.
+    :param parameter_name: The name of the parameter stored in SSM.
     :return: The parameter value if successful, or None if there's an error.
     """
-    # If no parameter name provided, try to get it from environment
-    if not parameter_name:
-        parameter_name = os.environ.get("SSM_PARAMETER_NAME")
-        if not parameter_name:
-            print("Error: No SSM parameter name provided")
-            return None
-    
     # Initialize the boto3 SSM client with enhanced configuration
     region = os.environ.get("AWS_REGION", "us-east-2")
     

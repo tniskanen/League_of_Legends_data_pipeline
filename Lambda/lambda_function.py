@@ -5,7 +5,7 @@ import logging
 import mysql.connector
 import Utils.sql as sql
 from Utils.json import flatten_json, split_json, add_join_keys
-from Utils.S3 import get_api_key_from_ssm
+from Utils.S3 import get_parameter_from_ssm
 
 
 # Setting up logging
@@ -20,10 +20,10 @@ def lambda_handler(event, context):
     
     #loading environment variables
     logger.info("Loading database credentials from SSM...")
-    DB_HOST = get_api_key_from_ssm("DB_HOST-dev")
-    DB_NAME = get_api_key_from_ssm("DB_NAME-dev")
-    DB_USER = get_api_key_from_ssm("DB_USER")
-    DB_PASSWORD = get_api_key_from_ssm("DB_PASSWORD-dev")
+    DB_HOST = get_parameter_from_ssm("DB_HOST-dev")
+    DB_NAME = get_parameter_from_ssm("DB_NAME-dev")
+    DB_USER = get_parameter_from_ssm("DB_USER")
+    DB_PASSWORD = get_parameter_from_ssm("DB_PASSWORD-dev")
     
     logger.info(f"DB_HOST: {DB_HOST}")
     logger.info(f"DB_NAME: {DB_NAME}")

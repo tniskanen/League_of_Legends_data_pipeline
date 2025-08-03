@@ -24,7 +24,7 @@ print(f"PYTHONPATH: {os.environ.get('PYTHONPATH', 'Not set')}")
 try:
     print("Testing imports...")
     from Utils.api import highElo, LowElo, matchList, match, handle_api_response
-    from Utils.S3 import send_json, get_api_key_from_ssm
+    from Utils.S3 import send_json, get_parameter_from_ssm
     print("✅ All imports successful")
 except ImportError as e:
     print(f"❌ Import error: {e}")
@@ -50,7 +50,7 @@ print(f"S3 bucket: {bucket}")
 # Test API key retrieval
 print("Retrieving API key from SSM...")
 try:
-    API_KEY = get_api_key_from_ssm("API_KEY")
+    API_KEY = get_parameter_from_ssm("API_KEY")
     if API_KEY:
         print(f"✅ API key retrieved (length: {len(API_KEY)})")
     else:
