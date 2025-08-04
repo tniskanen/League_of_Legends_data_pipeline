@@ -41,6 +41,7 @@ def test_aws_credentials():
 def upload_to_s3(bucket, key, data):
     """Enhanced upload function with better logging"""
     try:
+        data = json.dumps(data)
         region = os.environ.get('AWS_REGION', 'us-east-2')
         s3 = boto3.client('s3', region_name=region)
         
@@ -53,13 +54,15 @@ def upload_to_s3(bucket, key, data):
         traceback.print_exc()
         raise
 
-def send_json(data, bucket, custom_date=None):
+def send_json(data, bucket, custom_date=None, source=None):
     """
     Upload JSON to S3 with date-based folder structure
     
     Args:
         data: The match data to upload
+        bucket: S3 bucket name
         custom_date: Optional datetime object, defaults to current UTC time
+        source: Optional source string, if 'test' it will be added to the beginning of the S3 key
     """
     if not data:
         return None
@@ -84,7 +87,12 @@ def send_json(data, bucket, custom_date=None):
     match_count = len(data_copy)
 
     s3_key_hive = f"matches/year={year}/month={month}/day={day}/batch_{timestamp}_{match_count}_matches.json"
-    s3_key = s3_key_hive
+    
+    # Apply source prefix if source is 'test'
+    if source == 'test':
+        s3_key = f"{source}/{s3_key_hive}"
+    else:
+        s3_key = s3_key_hive
 
     # Enhance the JSON with metadata
     enhanced_data = {
@@ -97,12 +105,10 @@ def send_json(data, bucket, custom_date=None):
         'matches': data_copy
     }
     
-    json_data = json.dumps(enhanced_data)
-
-    # Start upload on new thread
+    # Start upload on new thread (upload_to_s3 will handle json.dumps)
     upload_thread = threading.Thread(
         target=upload_to_s3, 
-        args=(bucket, s3_key, json_data, match_count)
+        args=(bucket, s3_key, enhanced_data)
     )
     upload_thread.start()
 
@@ -134,71 +140,31 @@ def get_parameter_from_ssm(parameter_name):
         print(f"Error retrieving parameter: {str(e)}")
         return None
 
-def list_matches_by_date(bucket, year, month=None, day=None):
+def pull_s3_object(bucket, filepath):
     """
-    List all match files for a specific date range
+    Download and return JSON data from S3 object
     
     Args:
         bucket: S3 bucket name
-        year: Year (e.g., '2025')
-        month: Optional month (e.g., '05')
-        day: Optional day (e.g., '25')
-    """
-    s3 = boto3.client('s3')
-    
-    # Build prefix based on provided parameters
-    if day and month:
-        prefix = f"matches/year={year}/month={month}/day={day}/"
-    elif month:
-        prefix = f"matches/year={year}/month={month}/"
-    else:
-        prefix = f"matches/year={year}/"
-    
-    try:
-        response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+        filepath: S3 object key/path
         
-        if 'Contents' in response:
-            files = [obj['Key'] for obj in response['Contents']]
-            print(f"Found {len(files)} files in {prefix}")
-            return files
-        else:
-            print(f"No files found in {prefix}")
-            return []
-            
+    Returns:
+        dict: Parsed JSON data from S3 object, or None if error
+    """
+    try:
+        region = os.environ.get('AWS_REGION', 'us-east-2')
+        s3 = boto3.client('s3', region_name=region)
+        
+        response = s3.get_object(Bucket=bucket, Key=filepath)
+        file_content = response['Body'].read().decode('utf-8')
+        data = json.loads(file_content)
+        
+        print(f"✓ Successfully downloaded: {filepath}")
+        return data
+        
     except Exception as e:
-        print(f"Error listing files: {str(e)}")
-        return []
-
-def get_match_data_for_date(bucket, year, month, day):
-    """
-    Download and combine all match data for a specific date
-    """
-    files = list_matches_by_date(bucket, year, month, day)
-    all_matches = []
-    
-    s3 = boto3.client('s3')
-    
-    for file_key in files:
-        try:
-            response = s3.get_object(Bucket=bucket, Key=file_key)
-            file_content = response['Body'].read().decode('utf-8')
-            data = json.loads(file_content)
-            
-            # Handle both old and new formats
-            if 'matches' in data:
-                all_matches.extend(data['matches'])
-            else:
-                # Old format - assume it's directly a list of matches
-                if isinstance(data, list):
-                    all_matches.extend(data)
-                else:
-                    all_matches.append(data)
-                    
-        except Exception as e:
-            print(f"Error reading {file_key}: {str(e)}")
-    
-    print(f"Retrieved {len(all_matches)} total matches for {year}-{month}-{day}")
-    return all_matches
+        print(f"✗ Error downloading {filepath}: {str(e)}")
+        return None
 
 ###SAVING JSON LOCALLY TO TEST LAMBDA ETL
 def save_json(data):
