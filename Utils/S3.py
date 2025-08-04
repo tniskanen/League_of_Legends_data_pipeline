@@ -166,6 +166,49 @@ def pull_s3_object(bucket, filepath):
         print(f"✗ Error downloading {filepath}: {str(e)}")
         return None
 
+def alter_s3_file(bucket, key, operation, data=None):
+    """
+    Modify or delete an S3 object
+    
+    Args:
+        bucket: S3 bucket name
+        key: S3 object key/path
+        operation: Either "overwrite" or "delete"
+        data: Required for "overwrite" operation, ignored for "delete"
+        
+    Returns:
+        bool: True if successful, False if error
+    """
+    try:
+        region = os.environ.get('AWS_REGION', 'us-east-2')
+        s3 = boto3.client('s3', region_name=region)
+        
+        if operation == "overwrite":
+            if data is None:
+                print(f"✗ Error: data is required for overwrite operation")
+                return False
+            
+            # Convert data to JSON if it's not already a string
+            if not isinstance(data, str):
+                data = json.dumps(data)
+            
+            s3.put_object(Bucket=bucket, Key=key, Body=data)
+            print(f"✓ Successfully overwritten: {key}")
+            return True
+            
+        elif operation == "delete":
+            s3.delete_object(Bucket=bucket, Key=key)
+            print(f"✓ Successfully deleted: {key}")
+            return True
+            
+        else:
+            print(f"✗ Error: Invalid operation '{operation}'. Must be 'overwrite' or 'delete'")
+            return False
+            
+    except Exception as e:
+        print(f"✗ Error during {operation} operation on {key}: {str(e)}")
+        return False
+
 ###SAVING JSON LOCALLY TO TEST LAMBDA ETL
 def save_json(data):
     file_path = os.path.join(os.getcwd(), f'match_json_objects_{int(time.time())}.json') 
