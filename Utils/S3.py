@@ -209,6 +209,35 @@ def alter_s3_file(bucket, key, operation, data=None):
         print(f"✗ Error during {operation} operation on {key}: {str(e)}")
         return False
 
+def check_files(bucket, filepath):
+    """
+    List all objects at a specific S3 path
+    
+    Args:
+        bucket: S3 bucket name
+        filepath: S3 path/prefix to search
+        
+    Returns:
+        list: List of object keys found at the path, or empty list if none found
+    """
+    try:
+        region = os.environ.get('AWS_REGION', 'us-east-2')
+        s3 = boto3.client('s3', region_name=region)
+        
+        response = s3.list_objects_v2(Bucket=bucket, Prefix=filepath)
+        
+        if 'Contents' in response:
+            keys = [obj['Key'] for obj in response['Contents']]
+            print(f"✓ Found {len(keys)} files at {filepath}")
+            return keys
+        else:
+            print(f"✓ No files found at {filepath}")
+            return []
+            
+    except Exception as e:
+        print(f"✗ Error checking files at {filepath}: {str(e)}")
+        return []
+
 ###SAVING JSON LOCALLY TO TEST LAMBDA ETL
 def save_json(data):
     file_path = os.path.join(os.getcwd(), f'match_json_objects_{int(time.time())}.json') 
