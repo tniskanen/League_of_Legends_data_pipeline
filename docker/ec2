@@ -27,5 +27,5 @@ ENV PYTHONPATH="/lol_data_project:$PYTHONPATH"
 # Set the working directory to the EC2 directory
 WORKDIR /lol_data_project/EC2
 
-# Run ec2.py when the container launches
-CMD ["python", "ec2.py"]
+# Run main.py when the container launches
+CMD ["python", "main.py"]
