@@ -353,24 +353,14 @@ load_environment_vars() {
     # Get the directory where the script is located
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     
-    # Try to load ec2.env from multiple locations
-    if [ -f "$SCRIPT_DIR/ec2.env" ]; then
-        set -o allexport
-        source "$SCRIPT_DIR/ec2.env"
-        set +o allexport
-        echo "✅ Environment variables loaded from $SCRIPT_DIR/ec2.env"
-    elif [ -f "./ec2.env" ]; then
-        set -o allexport
-        source ./ec2.env
-        set +o allexport
-        echo "✅ Environment variables loaded from ./ec2.env"
-    elif [ -f "/home/ec2-user/ec2.env" ]; then
+    # Load ec2.env from the deployment location
+    if [ -f "/home/ec2-user/ec2.env" ]; then
         set -o allexport
         source /home/ec2-user/ec2.env
         set +o allexport
         echo "✅ Environment variables loaded from /home/ec2-user/ec2.env"
     else
-        echo "⚠️ ec2.env file not found, using defaults and environment"
+        echo "⚠️ ec2.env file not found at /home/ec2-user/ec2.env, using defaults and environment"
     fi
     
     # Get region from instance metadata
@@ -383,9 +373,8 @@ load_environment_vars() {
     export AWS_REGION="${REGION}"
     
     # Set defaults
-    export REPO_NAME="${REPO_NAME:-default_repo}"
-    export CONTAINER_NAME="${CONTAINER_NAME:-${REPO_NAME}_container}"
-    export FOLLOW_LOGS="${FOLLOW_LOGS:-true}"
+    export REPO_NAME="${REPO_NAME:-lol_data_project}"  # Use a consistent default instead of relying on GitHub vars
+    export CONTAINER_NAME="${CONTAINER_NAME:-lol_data_container}"  # Use the value from ec2.env
     export WAIT_FOR_EXIT="${WAIT_FOR_EXIT:-true}"
     export AUTO_CLEANUP="${AUTO_CLEANUP:-true}"
     export CLEANUP_VOLUMES="${CLEANUP_VOLUMES:-false}"
@@ -396,28 +385,68 @@ load_environment_vars() {
     
     echo "🔐 Loading sensitive variables from SSM..."
 
-    export AWS_ACCOUNT_ID=$(aws ssm get-parameter --name "ACCOUNT_ID" --with-decryption --query "Parameter.Value" --output text)
+    export AWS_ACCOUNT_ID=$(aws ssm get-parameter --name "ACCOUNT_ID" --with-decryption --query "Parameter.Value" --output text)   
+    export API_KEY=$(aws ssm get-parameter --name "API_KEY" --with-decryption --query "Parameter.Value" --output text)
+    export API_KEY_EXPIRATION=$(aws ssm get-parameter --name "API_KEY_EXPIRATION" --with-decryption --query "Parameter.Value" --output text) 
 
     if [ -z "$AWS_ACCOUNT_ID" ]; then
-    echo "❌ Failed to load AWS_ACCOUNT_ID from SSM"
-    handle_error 3 "Unable to retrieve ACCOUNT_ID from SSM"
+        echo "❌ Failed to load AWS_ACCOUNT_ID from SSM"
+        handle_error 3 "Unable to retrieve ACCOUNT_ID from SSM"
+    fi
+
+    if [ -z "$API_KEY" ]; then
+        echo "❌ Failed to load API_KEY from SSM"
+        handle_error 3 "Unable to retrieve API_KEY from SSM"
+    fi
+
+    if [ -z "$API_KEY_EXPIRATION" ]; then
+        echo "❌ Failed to load API_KEY_EXPIRATION from SSM"
+        handle_error 3 "Unable to retrieve API_KEY_EXPIRATION from SSM"
     fi
 
     # Validate required variables
-    if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$REGION" ] || [ -z "$REPO_NAME" ]; then
-        handle_error 2 "Missing required variables (AWS_ACCOUNT_ID, REGION, REPO_NAME)"
+    if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$REGION" ] || [ -z "$REPO_NAME" ] || [ -z "$API_KEY" ] || [ -z "$API_KEY_EXPIRATION" ]; then
+        handle_error 2 "Missing required variables (AWS_ACCOUNT_ID, REGION, REPO_NAME, API_KEY, API_KEY_EXPIRATION)"
     fi
     
     # Determine RUN_MODE and set corresponding variables
     if [ "${RUN_MODE}" == "test" ]; then
         export PLAYER_LIMIT=100
-        export BUCKET_NAME='lol-match-test'
         export SOURCE='test'
     else
         export PLAYER_LIMIT=100000
-        export BUCKET_NAME='lol-match-jsons'
         export SOURCE='prod'
     fi 
+
+    # Determine epoch S3 path based on BACKFILL setting
+    if [ "$BACKFILL" = "true" ]; then
+        EPOCH_S3_PATH="$BACKFILL_STATE_JSON_PATH"
+        echo "📅 Using backfill mode - loading epochs from: $EPOCH_S3_PATH"
+    else
+        EPOCH_S3_PATH="$PROD_STATE_JSON_PATH"
+        echo "📅 Using production mode - loading epochs from: $EPOCH_S3_PATH"
+    fi
+
+    # Download and parse epoch window from S3
+    echo "📥 Downloading epoch window from S3..."
+    aws s3 cp "$EPOCH_S3_PATH" ./window.json || {
+        echo "❌ Failed to download epoch window from S3"
+        handle_error 4 "Unable to download epoch window from $EPOCH_S3_PATH"
+    }
+
+    # Extract start and end epochs from the JSON
+    export start_epoch=$(jq -r '.start_epoch' window.json)
+    export end_epoch=$(jq -r '.end_epoch' window.json)
+
+    # Validate epoch values
+    if [ -z "$start_epoch" ] || [ "$start_epoch" = "null" ] || [ -z "$end_epoch" ] || [ "$end_epoch" = "null" ]; then
+        echo "❌ Failed to extract valid epochs from window.json"
+        echo "📋 Window.json contents:"
+        cat window.json
+        handle_error 5 "Invalid epoch values in window.json"
+    fi
+
+    echo "✅ Epoch window loaded: $start_epoch to $end_epoch"
 
     # Construct ECR URI
     export ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${REPO_NAME}:latest"
@@ -430,7 +459,6 @@ load_environment_vars() {
     echo "   Image: ${ECR_URI}"
     echo "   Auto-shutdown: ${AUTO_SHUTDOWN}"
     echo "   PLAYER LIMIT SET TO ${PLAYER_LIMIT}"
-    echo "   BUCKET SET TO ${BUCKET_NAME}"
 }
 
 # Function to set up container parameters
@@ -461,20 +489,16 @@ setup_container_params() {
         done
     fi
     
-    # Add SSM parameter name if specified
-    if [ -n "${SSM_PARAMETER_NAME}" ]; then
-        ENV_VARS="${ENV_VARS} -e SSM_PARAMETER_NAME=${SSM_PARAMETER_NAME}"
-    fi
-    
-    # Pass AWS region to container
+    # Pass essential variables to container
     ENV_VARS="${ENV_VARS} -e AWS_DEFAULT_REGION=${REGION}"
     ENV_VARS="${ENV_VARS} -e AWS_REGION=${REGION}"
     ENV_VARS="${ENV_VARS} -e PLAYER_LIMIT=${PLAYER_LIMIT}"
-    ENV_VARS="${ENV_VARS} -e BUCKET_NAME=${BUCKET_NAME}"
-    ENV_VARS="${ENV_VARS} -e SOURCE=${SOURCE}"
-    
-    # Extra Docker arguments
-    EXTRA_ARGS="${DOCKER_RUN_ARGS:-}"
+    ENV_VARS="${ENV_VARS} -e BUCKET=${BUCKET_NAME}"
+    ENV_VARS="${ENV_VARS} -e source=${SOURCE}"
+    ENV_VARS="${ENV_VARS} -e start_epoch=${start_epoch}"
+    ENV_VARS="${ENV_VARS} -e end_epoch=${end_epoch}"
+    ENV_VARS="${ENV_VARS} -e API_KEY=${API_KEY}"
+    ENV_VARS="${ENV_VARS} -e API_KEY_EXPIRATION=${API_KEY_EXPIRATION}"
     
     echo "✅ Container parameters configured"
 }
@@ -568,10 +592,10 @@ EOF
         echo "⏳ Waiting for container to complete..."
         
         # Start log following in background if requested
-        if [ "${FOLLOW_LOGS:-true}" = "true" ]; then
-            echo "📋 Following container logs in background..."
-            $DOCKER_CMD logs -f ${CONTAINER_NAME} &
-            LOGS_PID=$!
+        # Always follow logs for real-time monitoring
+        echo "📋 Following container logs in background..."
+        $DOCKER_CMD logs -f ${CONTAINER_NAME} &
+        LOGS_PID=$!
         fi
         
         # Wait for container to exit with reasonable monitoring for long-running containers
@@ -613,7 +637,8 @@ EOF
         done
         
         # Kill log following process if it's still running
-        if [ "${FOLLOW_LOGS:-true}" = "true" ] && [ -n "$LOGS_PID" ]; then
+        # Stop log following process
+        if [ -n "$LOGS_PID" ]; then
             echo "📋 Stopping log following process..."
             kill $LOGS_PID 2>/dev/null || true
             wait $LOGS_PID 2>/dev/null || true
@@ -624,10 +649,9 @@ EOF
         echo "✅ Container completed with exit code: ${EXIT_CODE}"
         
         # Show final logs if not already following
-        if [ "${FOLLOW_LOGS:-true}" != "true" ]; then
-            echo "📋 Final container logs:"
-            $DOCKER_CMD logs --tail 50 ${CONTAINER_NAME}
-        fi
+        # Always show final logs summary since we always follow logs
+        echo "📋 Final container logs:"
+        $DOCKER_CMD logs --tail 50 ${CONTAINER_NAME}
         
         # Send logs to CloudWatch if enabled
         if [ "${SEND_LOGS_TO_CLOUDWATCH:-false}" = "true" ]; then
