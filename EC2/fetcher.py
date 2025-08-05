@@ -6,7 +6,7 @@ import psutil
 try:
     print("Testing imports...")
     from Utils.api import highElo, LowElo, matchList 
-    from Utils.S3 import handle_api_response, get_parameter_from_ssm, upload_to_s3
+    from Utils.S3 import handle_api_response, upload_to_s3
     from Utils.logger import get_logger
     logger = get_logger(__name__)
     print("✅ All imports successful")
@@ -51,7 +51,10 @@ def run_fetcher(config):
             else:
                 logger.warning(f"No entries found for rank: {rank}")
     except Exception as e:
-        logger.error(f"Error during highElo request: {e}. KeyErrors indicate incorrect dictionary returned from API. TypeErrors indicate request exceptions.")
+        logger.error(f"❌ CRITICAL ERROR during highElo request: {e}")
+        print(f"🛑 High elo player collection failed - incomplete data would be catastrophic")
+        print(f"📋 Manual intervention required: Check API key and Riot API status")
+        sys.exit(1)
 
     try:
         if (len(low_elo_players) + len(high_elo_players)) < config['MAX_PLAYER_COUNT']:
@@ -80,7 +83,10 @@ def run_fetcher(config):
                     break
 
     except Exception as e:
-        logger.error(f"Error during LowElo request: {e}. KeyErrors indicate incorrect dictionary returned from API. TypeErrors indicate request exceptions.")
+        logger.error(f"❌ CRITICAL ERROR during LowElo request: {e}")
+        print(f"🛑 Low elo player collection failed - incomplete data would be catastrophic")
+        print(f"📋 Manual intervention required: Check API key and Riot API status")
+        sys.exit(1)
 
     print(f"Player collection complete: High={len(high_elo_players)}, Low={len(low_elo_players)}, Total={len(high_elo_players) + len(low_elo_players)}")
 
@@ -139,7 +145,11 @@ def run_fetcher(config):
             else:
                 handle_api_response(tempMatches, func_name='matchList', player_id=player['puuid'])
     except Exception as e:
-        logger.error(f"Error during matchList request: {e}")
+        logger.error(f"❌ CRITICAL ERROR during matchList request: {e}")
+        print(f"🛑 Matchlist generation failed at player {i}/{len(ranked_players)}")
+        print(f"📋 Incomplete matchlist would be useless - backfill required")
+        print(f"📋 Manual intervention required: Check API key and Riot API status")
+        sys.exit(1)
 
     uniqueMatches = set(matchesList)
     print(f"Found {len(uniqueMatches)} unique matches to process")
@@ -151,7 +161,31 @@ def run_fetcher(config):
         "matchlist": uniqueMatches
     }
 
-    upload_to_s3(config['BUCKET'], key, data_to_upload)
+    # Retry logic for critical S3 upload - 13 hours of work at stake
+    MAX_RETRIES = 3
+    upload_success = False
+    
+    for attempt in range(MAX_RETRIES):
+        print(f"📤 Attempting to upload matchlist to S3 (attempt {attempt + 1}/{MAX_RETRIES})...")
+        try:
+            upload_to_s3(config['BUCKET'], key, data_to_upload)
+            upload_success = True
+            print(f"✅ Successfully uploaded matchlist on attempt {attempt + 1}")
+            break
+        except Exception as e:
+            print(f"⚠️ Upload failed on attempt {attempt + 1}: {e}")
+            if attempt < MAX_RETRIES - 1:
+                print(f"⏳ Waiting 30 seconds before retry...")
+                time.sleep(30)
+    
+    if not upload_success:
+        print(f"❌ CRITICAL ERROR: Failed to upload matchlist after {MAX_RETRIES} attempts")
+        print(f"🛑 13 hours of work would be lost - manual intervention required")
+        print(f"📋 Manual action required:")
+        print(f"   1. Check S3 bucket permissions and connectivity")
+        print(f"   2. Verify bucket {config['BUCKET']} exists and is accessible")
+        print(f"   3. Retry this container after fixing S3 issues")
+        sys.exit(1)
 
     end_time = time.time()
     end_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
