@@ -25,7 +25,33 @@ def run_processor(config, matchlist):
     start_time = time.time()
     start_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
 
-    matchlist_data = pull_s3_object(config['BUCKET'], matchlist) 
+    # Retry logic for S3 pull - most failures are temporary
+    MAX_RETRIES = 3
+    matchlist_data = None
+    
+    for attempt in range(MAX_RETRIES):
+        print(f"📥 Attempting to pull matchlist from S3 (attempt {attempt + 1}/{MAX_RETRIES})...")
+        matchlist_data = pull_s3_object(config['BUCKET'], matchlist)
+        
+        if matchlist_data is not None:
+            print(f"✅ Successfully pulled matchlist on attempt {attempt + 1}")
+            break
+        
+        if attempt < MAX_RETRIES - 1:
+            print(f"⚠️ Pull failed, waiting 10 seconds before retry...")
+            time.sleep(10)
+    
+    if matchlist_data is None:
+        print(f"❌ Failed to pull matchlist from S3 after {MAX_RETRIES} attempts: {matchlist}")
+        print(f"⚠️ This could be a temporary S3 issue or corrupted file")
+        print(f"🔄 Preserving matchlist and exiting for manual intervention")
+        print(f"📋 Manual action required:")
+        print(f"   1. Check if {matchlist} exists in S3")
+        print(f"   2. If corrupted, regenerate matchlist for epoch {config['start_epoch']} to {config['end_epoch']}")
+        print(f"   3. If temporary issue, retry this container")
+        print(f"🛑 Exiting with error code 7 - manual intervention needed")
+        exit(7)
+    
     uniqueMatches = matchlist_data['matchlist']
     player_rank_map = matchlist_data['ranked_map']
 
@@ -103,21 +129,20 @@ def run_processor(config, matchlist):
     except Exception as e:
         logger.error(f"Error during match processing: {e}")
         
-        # Handle unprocessed matches due to unexpected error
-        if current_index < len(uniqueMatches):
-            unprocessed_matches = list(uniqueMatches)[current_index:]
-            print(f"⚠️ Error occurred during processing. Saving {len(unprocessed_matches)} unprocessed matches to S3...")
-            
-            # Create data to upload with unprocessed matches and player rank map
-            data_to_upload = {
-                "ranked_map": player_rank_map,
-                "matchlist": unprocessed_matches
-            }
-            
-            # Upload leftovers to S3
-            key = f'backfill/leftovers/leftovers_{config["start_epoch"]}_{config["end_epoch"]}_.json'
-            upload_to_s3(config['BUCKET'], key, data_to_upload)
-            print(f"✅ Unprocessed matches saved to: {key}")
+        # Always handle unprocessed matches due to unexpected error
+        unprocessed_matches = list(uniqueMatches)[current_index:] if current_index < len(uniqueMatches) else []
+        print(f"⚠️ Error occurred during processing. Saving {len(unprocessed_matches)} unprocessed matches to S3...")
+        
+        # Create data to upload with unprocessed matches and player rank map
+        data_to_upload = {
+            "ranked_map": player_rank_map,
+            "matchlist": unprocessed_matches
+        }
+        
+        # Upload leftovers to S3
+        key = f'backfill/leftovers/leftovers_{config["start_epoch"]}_{config["end_epoch"]}_.json'
+        upload_to_s3(config['BUCKET'], key, data_to_upload)
+        print(f"✅ Unprocessed matches saved to: {key}")
 
     # Upload remaining matches
     if matches:
@@ -135,12 +160,9 @@ def run_processor(config, matchlist):
     print("All uploads completed!")
     print(f"Matches with no data: {no_data}")
 
-    # Only delete matchlist if we processed at least some matches
-    if total > 0:
-        alter_s3_file(config['BUCKET'], matchlist, 'delete')
-        print(f"✅ Matchlist deleted from S3")
-    else:
-        print(f"⚠️ No matches were processed, keeping original matchlist in S3")
+    # Always delete matchlist - it's either fully processed or stored in leftovers
+    alter_s3_file(config['BUCKET'], matchlist, 'delete')
+    print(f"✅ Matchlist deleted from S3")
     
     end_time = time.time()
     end_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
