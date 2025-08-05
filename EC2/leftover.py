@@ -5,17 +5,21 @@ import psutil
 try:
     print("Testing imports...")
     from Utils.api import match, handle_api_response
-    from Utils.S3 import send_json, pull_s3_object, upload_to_s3, alter_s3_file, check_files
+    from Utils.S3 import send_json, pull_s3_object, alter_s3_file, check_files
     from Utils.logger import get_logger
     logger = get_logger(__name__)
     print("✅ All imports successful")
 except ImportError as e:
     print(f"❌ Import error: {e}")
     print("Available modules in current directory:")
-    sys.exit(1)
+    print(f"🛑 Leftover processing failed due to import error")
+    print(f"📋 Skipping this window - no data loss, moving to next window")
+    sys.exit(8)
 except Exception as e:
     print(f"❌ Unexpected import error: {e}")
-    sys.exit(1)
+    print(f"🛑 Leftover processing failed due to unexpected import error")
+    print(f"📋 Skipping this window - no data loss, moving to next window")
+    sys.exit(8)
 
 def run_leftovers(config):
 

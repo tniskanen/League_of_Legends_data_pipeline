@@ -12,10 +12,14 @@ try:
 except ImportError as e:
     print(f"❌ Import error: {e}")
     print("Available modules in current directory:")
-    sys.exit(1)
+    print(f"🛑 Matchlist processing failed due to import error")
+    print(f"📋 Manual intervention required: Check container dependencies")
+    sys.exit(7)
 except Exception as e:
     print(f"❌ Unexpected import error: {e}")
-    sys.exit(1)
+    print(f"🛑 Matchlist processing failed due to unexpected import error")
+    print(f"📋 Manual intervention required: Check container setup")
+    sys.exit(7)
 
 def run_processor(config, matchlist):
 
