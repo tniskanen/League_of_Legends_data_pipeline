@@ -2,7 +2,7 @@ import os
 
 def load_config():
     return {
-        "MAX_PLAYER_COUNT": int(os.environ.get("MAX_PLAYER_COUNT", 100000)),
+        "MAX_PLAYER_COUNT": int(os.environ.get("PLAYER_LIMIT", 100000)),
         "start_epoch": os.environ.get("start_epoch"),
         "end_epoch": os.environ.get("end_epoch"),
         "source": os.environ.get("SOURCE", 'NA'),
