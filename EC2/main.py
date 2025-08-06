@@ -1,3 +1,4 @@
+import sys
 from Utils.logger import get_logger
 
 from config_loader import load_config
@@ -10,21 +11,29 @@ def main():
     logger = get_logger(__name__)
     
     logger.info("🎮 Starting container main controller...")
-
-    # Step 1: Fetch matchlist
-    matchlist = run_fetcher(config)
     
-    # Step 2: Process matchlist (if any)
-    if matchlist:
-        logger.info("✅ Matchlist fetched successfully, proceeding to match processing.")
-        run_processor(config, matchlist)
-    else:
-        logger.warning("⚠️ No matchlist fetched. Skipping match processing.")
+    try:
+        # Step 1: Fetch matchlist
+        matchlist = run_fetcher(config)
+        
+        # Step 2: Process matchlist (if any)
+        if matchlist:
+            logger.info("✅ Matchlist fetched successfully, proceeding to match processing.")
+            run_processor(config, matchlist)
+        else:
+            logger.warning("⚠️ No matchlist fetched. Skipping match processing.")
 
-    # Step 3: Always try to process leftovers if time/API allows
-    run_leftovers(config)
+        # Step 3: Always try to process leftovers if time/API allows
+        run_leftovers(config)
 
-    logger.info("🎉 Pipeline complete.")
+        logger.info("🎉 Pipeline complete.")
+        
+    except SystemExit as e:
+        # Re-raise SystemExit to preserve exit code
+        raise
+    except Exception as e:
+        logger.error(f"❌ Unexpected error: {e}")
+        sys.exit(1)  # Critical failure
 
 if __name__ == "__main__":
     main()

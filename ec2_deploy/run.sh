@@ -388,6 +388,7 @@ load_environment_vars() {
     export AWS_ACCOUNT_ID=$(aws ssm get-parameter --name "ACCOUNT_ID" --with-decryption --query "Parameter.Value" --output text)   
     export API_KEY=$(aws ssm get-parameter --name "API_KEY" --with-decryption --query "Parameter.Value" --output text)
     export API_KEY_EXPIRATION=$(aws ssm get-parameter --name "API_KEY_EXPIRATION" --with-decryption --query "Parameter.Value" --output text) 
+    export BACKFILL=$(aws ssm get-parameter --name "BACKFILL" --query "Parameter.Value" --output text)
 
     if [ -z "$AWS_ACCOUNT_ID" ]; then
         echo "❌ Failed to load AWS_ACCOUNT_ID from SSM"
@@ -402,6 +403,11 @@ load_environment_vars() {
     if [ -z "$API_KEY_EXPIRATION" ]; then
         echo "❌ Failed to load API_KEY_EXPIRATION from SSM"
         handle_error 3 "Unable to retrieve API_KEY_EXPIRATION from SSM"
+    fi
+
+    if [ -z "$BACKFILL" ]; then
+        echo "❌ Failed to load BACKFILL from SSM"
+        handle_error 3 "Unable to retrieve BACKFILL from SSM"
     fi
 
     # Validate required variables
@@ -447,6 +453,15 @@ load_environment_vars() {
     fi
 
     echo "✅ Epoch window loaded: $start_epoch to $end_epoch"
+    
+    # Handle window adjustment based on BACKFILL and ACCELERATE settings
+    echo "🔄 Checking window adjustment logic..."
+    adjust_window_if_needed "$start_epoch" "$end_epoch"
+    
+    # Re-export the potentially updated epochs
+    export start_epoch=$(jq -r '.start_epoch' window.json)
+    export end_epoch=$(jq -r '.end_epoch' window.json)
+    echo "✅ Final epoch window: $start_epoch to $end_epoch"
 
     # Construct ECR URI
     export ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${REPO_NAME}:latest"
@@ -493,7 +508,7 @@ setup_container_params() {
     ENV_VARS="${ENV_VARS} -e AWS_DEFAULT_REGION=${REGION}"
     ENV_VARS="${ENV_VARS} -e AWS_REGION=${REGION}"
     ENV_VARS="${ENV_VARS} -e PLAYER_LIMIT=${PLAYER_LIMIT}"
-    ENV_VARS="${ENV_VARS} -e BUCKET=${BUCKET_NAME}"
+    ENV_VARS="${ENV_VARS} -e BUCKET=${BUCKET}"
     ENV_VARS="${ENV_VARS} -e source=${SOURCE}"
     ENV_VARS="${ENV_VARS} -e start_epoch=${start_epoch}"
     ENV_VARS="${ENV_VARS} -e end_epoch=${end_epoch}"
@@ -645,8 +660,12 @@ EOF
         fi
         
         # Get final status
-        EXIT_CODE=$($DOCKER_CMD inspect ${CONTAINER_NAME} --format='{{.State.ExitCode}}')
-        echo "✅ Container completed with exit code: ${EXIT_CODE}"
+            EXIT_CODE=$($DOCKER_CMD inspect ${CONTAINER_NAME} --format='{{.State.ExitCode}}')
+    echo "✅ Container completed with exit code: ${EXIT_CODE}"
+    
+    # Handle exit logic based on container exit code
+    echo "🔄 Processing container exit logic..."
+    handle_exit_logic "$EXIT_CODE"
         
         # Show final logs if not already following
         # Always show final logs summary since we always follow logs
@@ -728,6 +747,204 @@ EOF
         
         return $EXIT_CODE
     fi
+}
+
+# Function to update SSM parameter
+update_ssm_parameter() {
+    local parameter_name="$1"
+    local value="$2"
+    
+    echo "🔄 Updating SSM parameter $parameter_name to $value..."
+    if aws ssm put-parameter --name "$parameter_name" --value "$value" --type "String" --overwrite >/dev/null 2>&1; then
+        echo "✅ Updated SSM parameter $parameter_name to $value"
+        return 0
+    else
+        echo "❌ Failed to update SSM parameter $parameter_name"
+        return 1
+    fi
+}
+
+# Function to update window.json and upload to S3
+update_window_json() {
+    local start_epoch="$1"
+    local end_epoch="$2"
+    local s3_path="$3"
+    
+    echo "🔄 Updating window.json at $s3_path..."
+    
+    # Extract bucket and key from s3://bucket/path
+    local bucket=$(echo "$s3_path" | sed 's|s3://||' | cut -d'/' -f1)
+    local key=$(echo "$s3_path" | sed 's|s3://[^/]*/||')
+    
+    # Create window data JSON
+    local window_data="{\"start_epoch\":$start_epoch,\"end_epoch\":$end_epoch}"
+    
+    if echo "$window_data" | aws s3 cp - "s3://$bucket/$key" --content-type "application/json" >/dev/null 2>&1; then
+        echo "✅ Updated window.json at $s3_path: $start_epoch to $end_epoch"
+        return 0
+    else
+        echo "❌ Failed to update window.json at $s3_path"
+        return 1
+    fi
+}
+
+# Function to adjust window based on BACKFILL and ACCELERATE settings
+adjust_window_if_needed() {
+    local start_epoch="$1"
+    local end_epoch="$2"
+    
+    echo "🔄 Checking window adjustment logic..."
+    
+    # Get current BACKFILL setting from SSM
+    local backfill
+    if backfill_response=$(aws ssm get-parameter --name "BACKFILL" --query "Parameter.Value" --output text 2>/dev/null); then
+        backfill=$(echo "$backfill_response" | tr '[:upper:]' '[:lower:]')
+        echo "📊 BACKFILL setting: $backfill"
+    else
+        echo "⚠️ Failed to get BACKFILL from SSM, defaulting to false"
+        backfill="false"
+    fi
+    
+    # If BACKFILL=true, keep current window and run container
+    if [ "$backfill" = "true" ]; then
+        echo "🔄 BACKFILL=true: Using current window $start_epoch to $end_epoch"
+        return
+    fi
+    
+    # BACKFILL=false - Check ACCELERATE and adjust window
+    echo "🚀 BACKFILL=false: Checking ACCELERATE setting..."
+    
+    # Get current ACCELERATE setting from SSM
+    local accelerate
+    if accelerate_response=$(aws ssm get-parameter --name "ACCELERATE" --query "Parameter.Value" --output text 2>/dev/null); then
+        accelerate=$(echo "$accelerate_response" | tr '[:upper:]' '[:lower:]')
+        echo "⚡ ACCELERATE setting: $accelerate"
+    else
+        echo "⚠️ Failed to get ACCELERATE from SSM, defaulting to false"
+        accelerate="false"
+    fi
+    
+    local current_start="$start_epoch"
+    local current_end="$end_epoch"
+    local current_time=$(date +%s)
+    
+    # Loop for epoch adjustment
+    local max_iterations=10  # Prevent infinite loops
+    local iteration=0
+    
+    while [ $iteration -lt $max_iterations ]; do
+        iteration=$((iteration + 1))
+        echo "🔄 Window adjustment iteration $iteration"
+        
+        # Calculate new epochs
+        local new_start="$current_end"
+        local new_end
+        
+        if [ "$accelerate" = "true" ]; then
+            new_end=$((current_end + 4 * 24 * 3600))  # +4 days
+            echo "⚡ Accelerated mode: $new_start to $new_end (+4 days)"
+        else
+            new_end=$((current_end + 2 * 24 * 3600))  # +2 days
+            echo "🐌 Normal mode: $new_start to $new_end (+2 days)"
+        fi
+        
+        # Check if new end_epoch is greater than current time
+        if [ $new_end -gt $current_time ]; then
+            if [ "$accelerate" = "true" ]; then
+                # Switch to normal mode and recalculate
+                echo "⚠️ New end_epoch ($new_end) > current_time ($current_time) with ACCELERATE=true"
+                echo "🔄 Switching to normal mode and recalculating..."
+                update_ssm_parameter "ACCELERATE" "false"
+                accelerate="false"
+                current_end="$new_end"  # Use the calculated end as new start
+                continue
+            else
+                # Normal mode but still too far ahead - calculate delay and update EventBridge
+                echo "⚠️ New end_epoch ($new_end) > current_time ($current_time) with ACCELERATE=false"
+                
+                local time_diff=$((new_end - current_time))
+                local hours_ahead=$((time_diff / 3600))
+                
+                echo "📊 Time difference: ${hours_ahead} hours ahead"
+                
+                if [ $hours_ahead -le 24 ]; then
+                    echo "📅 Setting 1-day delay for EventBridge scheduler"
+                    # Mock EventBridge variables (to be implemented)
+                    local EVENTBRIDGE_SCHEDULE_NAME="lol-data-pipeline-schedule"
+                    local EVENTBRIDGE_RULE_ARN="arn:aws:events:us-east-2:123456789012:rule/lol-data-pipeline"
+                    local EVENTBRIDGE_TARGET_ARN="arn:aws:lambda:us-east-2:123456789012:function:lol-data-pipeline"
+                    
+                    echo "📋 EventBridge variables (mock):"
+                    echo "   Schedule Name: $EVENTBRIDGE_SCHEDULE_NAME"
+                    echo "   Rule ARN: $EVENTBRIDGE_RULE_ARN"
+                    echo "   Target ARN: $EVENTBRIDGE_TARGET_ARN"
+                    echo "🔧 TODO: Implement 1-day delay EventBridge schedule update"
+                elif [ $hours_ahead -le 48 ]; then
+                    echo "📅 Setting 2-day delay for EventBridge scheduler"
+                    # Mock EventBridge variables (to be implemented)
+                    local EVENTBRIDGE_SCHEDULE_NAME="lol-data-pipeline-schedule"
+                    local EVENTBRIDGE_RULE_ARN="arn:aws:events:us-east-2:123456789012:rule/lol-data-pipeline"
+                    local EVENTBRIDGE_TARGET_ARN="arn:aws:lambda:us-east-2:123456789012:function:lol-data-pipeline"
+                    
+                    echo "📋 EventBridge variables (mock):"
+                    echo "   Schedule Name: $EVENTBRIDGE_SCHEDULE_NAME"
+                    echo "   Rule ARN: $EVENTBRIDGE_RULE_ARN"
+                    echo "   Target ARN: $EVENTBRIDGE_TARGET_ARN"
+                    echo "🔧 TODO: Implement 2-day delay EventBridge schedule update"
+                else
+                    echo "⚠️ More than 48 hours ahead - keeping current window"
+                fi
+                
+                # Keep current window for now
+                update_window_json "$current_start" "$current_end" "s3://lol-match-jsons/production/state/next_window.json"
+                return
+            fi
+        else
+            # New end_epoch is in the past - safe to update
+            echo "✅ New end_epoch ($new_end) <= current_time ($current_time) - safe to update"
+            update_window_json "$new_start" "$new_end" "s3://lol-match-jsons/production/state/next_window.json"
+            return
+        fi
+    done
+    
+    # If we reach here, we hit max iterations
+    echo "⚠️ Hit maximum iterations ($max_iterations), using last calculated window"
+    update_window_json "$new_start" "$new_end" "s3://lol-match-jsons/production/state/next_window.json"
+}
+
+# Function to handle exit logic based on exit code
+handle_exit_logic() {
+    local exit_code="$1"
+    
+    echo "🔄 Processing exit code $exit_code..."
+    
+    # Set BACKFILL and ACCELERATE based on exit code
+    local backfill_value
+    local accelerate_value
+    
+    if [ "$exit_code" = "0" ] || [ "$exit_code" = "7" ] || [ "$exit_code" = "8" ]; then
+        # Success or non-critical failures - move to production
+        backfill_value="false"
+        echo "📊 Exit code $exit_code: Setting BACKFILL=false (ACCELERATE unchanged)"
+    elif [ "$exit_code" = "1" ]; then
+        # Critical failure - stay in backfill and accelerate
+        backfill_value="true"
+        accelerate_value="true"
+        echo "📊 Exit code $exit_code: Setting BACKFILL=true, ACCELERATE=true (catch-up mode)"
+    else
+        echo "⚠️ Unknown exit code $exit_code, defaulting to production"
+        backfill_value="false"
+    fi
+    
+    # Update BACKFILL SSM parameter
+    update_ssm_parameter "BACKFILL" "$backfill_value"
+    
+    # Only update ACCELERATE if we're setting it to true (backfill mode)
+    if [ "$exit_code" = "1" ]; then
+        update_ssm_parameter "ACCELERATE" "$accelerate_value"
+    fi
+    
+    echo "✅ Exit logic completed - BACKFILL=$backfill_value, ACCELERATE=$accelerate_value"
 }
 
 # Main execution function
