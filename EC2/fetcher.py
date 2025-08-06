@@ -5,8 +5,8 @@ import psutil
 # Test imports immediately and catch any import errors
 try:
     print("Testing imports...")
-    from Utils.api import highElo, LowElo, matchList 
-    from Utils.S3 import handle_api_response, upload_to_s3
+    from Utils.api import highElo, LowElo, matchList, handle_api_response 
+    from Utils.S3 import upload_to_s3
     from Utils.logger import get_logger
     logger = get_logger(__name__)
     print("✅ All imports successful")

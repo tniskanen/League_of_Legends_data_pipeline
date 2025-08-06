@@ -334,7 +334,13 @@ EOF
             echo "🔍 Container logs:"
             $DOCKER_CMD logs "${CONTAINER_NAME}"
             echo "🔍 Container exit code:"
-            $DOCKER_CMD inspect "${CONTAINER_NAME}" --format='{{.State.ExitCode}}'
+            EXIT_CODE=$($DOCKER_CMD inspect "${CONTAINER_NAME}" --format='{{.State.ExitCode}}')
+            echo "Container exit code: $EXIT_CODE"
+            
+            # Handle exit logic before shutting down
+            echo "🔄 Processing container exit logic..."
+            handle_exit_logic "$EXIT_CODE"
+            
             handle_error 5 "Container exited immediately"
         fi
         
