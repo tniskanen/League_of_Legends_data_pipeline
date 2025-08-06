@@ -82,7 +82,7 @@ load_environment_vars() {
     export AWS_REGION="${REGION}"
     
     # Set defaults
-    export REPO_NAME="${REPO_NAME:-lol_data_project}"  # Use a consistent default instead of relying on GitHub vars
+    export REPO_NAME="${REPO_NAME:-ec2-docker-image}"  # Use the correct ECR repository name
     export CONTAINER_NAME="${CONTAINER_NAME:-lol_data_container}"  # Use the value from ec2.env
     export WAIT_FOR_EXIT="${WAIT_FOR_EXIT:-true}"
     export AUTO_CLEANUP="${AUTO_CLEANUP:-true}"
