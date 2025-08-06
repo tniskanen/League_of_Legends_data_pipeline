@@ -491,6 +491,14 @@ main() {
     # Set up trap for cleanup on script termination
     trap 'echo "🚨 Script interrupted, cleaning up..."; rm -f "$LOCK_FILE"; exit 1' INT TERM
     
+    # Set Docker command based on user permissions
+    if groups | grep -q docker; then
+        DOCKER_CMD="docker"
+    else
+        DOCKER_CMD="sudo docker"
+    fi
+    export DOCKER_CMD
+    
     check_docker
     verify_iam_credentials
     load_environment_vars

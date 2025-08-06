@@ -135,14 +135,17 @@ check_docker() {
         handle_error 1 "Docker is not installed or not in PATH"
     fi
     
-    if ! $DOCKER_CMD version >/dev/null 2>&1; then
+    # Use DOCKER_CMD if set, otherwise default to docker
+    local docker_cmd="${DOCKER_CMD:-docker}"
+    
+    if ! $docker_cmd version >/dev/null 2>&1; then
         handle_error 2 "Docker is not running or not accessible"
     fi
     
     echo "✅ Docker is available and running"
     
     # Check Docker daemon
-    if ! $DOCKER_CMD info >/dev/null 2>&1; then
+    if ! $docker_cmd info >/dev/null 2>&1; then
         handle_error 2 "Cannot connect to Docker daemon"
     fi
     
