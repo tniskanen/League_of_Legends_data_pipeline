@@ -40,6 +40,7 @@ fi
 
 # Check if we're the process that should be running
 LOCK_PID=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
+echo "🔍 Lock file PID: $LOCK_PID, Current PID: $$"
 if [ "$LOCK_PID" = "$$" ]; then
     echo "✅ Lock file verified - we are the authorized process"
 else
@@ -86,26 +87,34 @@ load_environment_vars() {
     
     echo "🔐 Loading sensitive variables from SSM..."
 
+    echo "🔍 Loading ACCOUNT_ID..."
     export AWS_ACCOUNT_ID=$(aws ssm get-parameter --name "ACCOUNT_ID" --with-decryption --query "Parameter.Value" --output text)   
+    echo "🔍 Loading API_KEY..."
     export API_KEY=$(aws ssm get-parameter --name "API_KEY" --with-decryption --query "Parameter.Value" --output text)
+    echo "🔍 Loading API_KEY_EXPIRATION..."
     export API_KEY_EXPIRATION=$(aws ssm get-parameter --name "API_KEY_EXPIRATION" --with-decryption --query "Parameter.Value" --output text) 
+    echo "🔍 Loading BACKFILL..."
     export BACKFILL=$(aws ssm get-parameter --name "BACKFILL" --query "Parameter.Value" --output text)
 
+    echo "🔍 AWS_ACCOUNT_ID: ${AWS_ACCOUNT_ID:0:10}..." # Show first 10 chars
     if [ -z "$AWS_ACCOUNT_ID" ]; then
         echo "❌ Failed to load AWS_ACCOUNT_ID from SSM"
         handle_error 3 "Unable to retrieve ACCOUNT_ID from SSM"
     fi
 
+    echo "🔍 API_KEY: ${API_KEY:0:10}..." # Show first 10 chars
     if [ -z "$API_KEY" ]; then
         echo "❌ Failed to load API_KEY from SSM"
         handle_error 3 "Unable to retrieve API_KEY from SSM"
     fi
 
+    echo "🔍 API_KEY_EXPIRATION: $API_KEY_EXPIRATION"
     if [ -z "$API_KEY_EXPIRATION" ]; then
         echo "❌ Failed to load API_KEY_EXPIRATION from SSM"
         handle_error 3 "Unable to retrieve API_KEY_EXPIRATION from SSM"
     fi
 
+    echo "🔍 BACKFILL: $BACKFILL"
     if [ -z "$BACKFILL" ]; then
         echo "❌ Failed to load BACKFILL from SSM"
         handle_error 3 "Unable to retrieve BACKFILL from SSM"
