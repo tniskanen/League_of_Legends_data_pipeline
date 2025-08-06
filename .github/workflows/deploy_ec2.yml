@@ -42,8 +42,8 @@ jobs:
           cat changed_files.txt
           echo "===================="
           
-          # Detect EC2 file changes
-          if grep -Eq '^ec2_deploy/(starter\.sh|run\.sh)$|^ec2\.env$' changed_files.txt; then
+          # Detect EC2 file changes (everything in ec2_deploy except build.sh and deploy.sh)
+          if grep -Eq '^ec2_deploy/(starter\.sh|package\.sh|scripts/)' changed_files.txt || grep -Eq '^ec2\.env$' changed_files.txt; then
             echo "✅ EC2 files changed detected"
             ec2_files_changed=true
             echo "ec2_files_changed=true" >> $GITHUB_OUTPUT
@@ -52,8 +52,8 @@ jobs:
             echo "ec2_files_changed=false" >> $GITHUB_OUTPUT
           fi
           
-          # Detect Docker-related changes
-          if grep -Eiq '^(docker/ec2|EC2/|ec2_deploy/(build\.sh|deploy\.sh)|Utils/|requirements\.txt|setup\.py|__init__\.py|\.gitignore|\.dockerignore|Dockerfile)' changed_files.txt; then
+          # Detect Docker-related changes (only container code and dependencies)
+          if grep -Eiq '^(docker/ec2|EC2/|Utils/|requirements\.txt|setup\.py|__init__\.py|\.gitignore|\.dockerignore|Dockerfile)' changed_files.txt; then
             echo "✅ Docker files changed detected"
             docker_files_changed=true
             echo "docker_files_changed=true" >> $GITHUB_OUTPUT
@@ -64,8 +64,8 @@ jobs:
           
           # Debug info
           echo "=== DEBUG INFO ==="
-          echo "EC2 pattern: '^ec2_deploy/(starter\.sh|run\.sh)$|^ec2\.env$'"
-          echo "Docker pattern: '^(docker/ec2|EC2/|ec2_deploy/(build\.sh|deploy\.sh)|Utils/|requirements\.txt|setup\.py|__init__\.py|\.gitignore|\.dockerignore|Dockerfile)'"
+          echo "EC2 pattern: '^ec2_deploy/(starter\.sh|package\.sh|scripts/)' OR '^ec2\.env$'"
+          echo "Docker pattern: '^(docker/ec2|EC2/|Utils/|requirements\.txt|setup\.py|__init__\.py|\.gitignore|\.dockerignore|Dockerfile)'"
           echo "ec2_files_changed: $ec2_files_changed"
           echo "docker_files_changed: $docker_files_changed"
           
@@ -157,11 +157,21 @@ jobs:
       - name: Upload updated files to EC2
         run: |
           ssh -o StrictHostKeyChecking=no -i ec2_key.pem ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }} "mkdir -p /home/${{ vars.EC2_USER }}"
+          ssh -o StrictHostKeyChecking=no -i ec2_key.pem ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }} "mkdir -p /home/${{ vars.EC2_USER }}/scripts"
           
-          scp -o StrictHostKeyChecking=no -i ec2_key.pem ec2_deploy/starter.sh ec2_deploy/run.sh ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }}:/home/${{ vars.EC2_USER }}/
+          # Upload main scripts
+          scp -o StrictHostKeyChecking=no -i ec2_key.pem ec2_deploy/starter.sh ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }}:/home/${{ vars.EC2_USER }}/
+          
+          # Upload script files
+          scp -o StrictHostKeyChecking=no -i ec2_key.pem ec2_deploy/scripts/run.sh ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }}:/home/${{ vars.EC2_USER }}/scripts/
+          scp -o StrictHostKeyChecking=no -i ec2_key.pem ec2_deploy/scripts/utils.sh ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }}:/home/${{ vars.EC2_USER }}/scripts/
+          scp -o StrictHostKeyChecking=no -i ec2_key.pem ec2_deploy/scripts/functions.sh ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }}:/home/${{ vars.EC2_USER }}/scripts/
+          
+          # Upload environment file
           scp -o StrictHostKeyChecking=no -i ec2_key.pem ec2.env ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }}:/home/${{ vars.EC2_USER }}/
           
-          ssh -o StrictHostKeyChecking=no -i ec2_key.pem ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }} "chmod +x /home/${{ vars.EC2_USER }}/*.sh"
+          # Make scripts executable
+          ssh -o StrictHostKeyChecking=no -i ec2_key.pem ${{ vars.EC2_USER }}@${{ secrets.EC2_PUBLIC_IP }} "chmod +x /home/${{ vars.EC2_USER }}/*.sh /home/${{ vars.EC2_USER }}/scripts/*.sh"
 
   build-and-deploy-docker:
     needs: [detect-changes, manage-ec2-power]
