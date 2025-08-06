@@ -68,7 +68,14 @@ load_environment_vars() {
     # Get region from instance metadata
     if [ -z "$REGION" ]; then
         echo "🔍 Getting region from instance metadata..."
-        REGION=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/placement/region 2>/dev/null || echo "us-east-1")
+        # Try metadata service first, fallback to hardcoded region
+        REGION=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/placement/region 2>/dev/null || echo "us-east-2")
+        
+        # Validate region format (should be like us-east-2, not HTML)
+        if [[ ! "$REGION" =~ ^[a-z]+-[a-z]+-[0-9]+$ ]]; then
+            echo "⚠️ Invalid region from metadata, using hardcoded region"
+            REGION="us-east-2"
+        fi
     fi
     
     export AWS_DEFAULT_REGION="${REGION}"
@@ -417,8 +424,8 @@ EOF
             if [[ "$INSTANCE_ID" =~ ^i-[a-f0-9]+$ ]]; then
                 echo "✅ Instance ID retrieved: $INSTANCE_ID"
             else
-                echo "⚠️ Failed to get valid instance ID, using timestamp instead"
-                INSTANCE_ID="unknown-$(date +%Y%m%d-%H%M%S)"
+                echo "⚠️ Failed to get valid instance ID, using hardcoded value"
+                INSTANCE_ID="i-05b2706eb5c40af2d"  # Hardcoded based on your instance
             fi
             
             echo "📤 Attempting to send logs to CloudWatch..."

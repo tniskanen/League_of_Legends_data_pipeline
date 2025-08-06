@@ -97,6 +97,12 @@ shutdown_ec2_instance() {
     local instance_id
     instance_id=$(curl -s --connect-timeout 5 --max-time 10 http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null)
     
+    # Validate instance ID format (should be i-xxxxxxxxx, not HTML)
+    if [[ ! "$instance_id" =~ ^i-[a-f0-9]+$ ]]; then
+        echo "⚠️ Invalid instance ID from metadata, using hardcoded value"
+        instance_id="i-05b2706eb5c40af2d"  # Hardcoded based on your instance
+    fi
+    
     if [ -z "$instance_id" ]; then
         echo "⚠️ Could not retrieve instance ID, using alternative shutdown method"
         # Alternative shutdown method
