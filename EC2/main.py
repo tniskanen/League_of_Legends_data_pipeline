@@ -24,8 +24,12 @@ def main():
             logger.warning("⚠️ No matchlist fetched. Skipping match processing.")
 
         # Step 3: Always try to process leftovers if time/API allows
-        run_leftovers(config)
-
+        try:
+            run_leftovers(config)
+        except Exception as e:
+            logger.warning(f"⚠️ Leftover processing failed: {e}")
+            logger.info("📋 Continuing with pipeline completion - leftover errors are non-critical")
+        
         logger.info("🎉 Pipeline complete.")
         
     except SystemExit as e:
