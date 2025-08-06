@@ -8,7 +8,7 @@ echo "Started at: $(date)"
 echo "Running as user: $(whoami)"
 
 # Configuration
-MAIN_SCRIPT="/home/ec2-user/run.sh"
+MAIN_SCRIPT="/home/ec2-user/scripts/run.sh"
 LOG_DIR="/tmp/container_logs"
 LOCK_FILE="/tmp/container_job.lock"
 

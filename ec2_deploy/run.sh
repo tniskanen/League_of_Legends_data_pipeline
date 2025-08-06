@@ -558,6 +558,32 @@ run_container() {
 }
 EOF
 
+    # Check SLOWDOWN setting before container run
+    echo "🔄 Checking SLOWDOWN setting..."
+    local slowdown
+    if slowdown_response=$(aws ssm get-parameter --name "SLOWDOWN" --query "Parameter.Value" --output text 2>/dev/null); then
+        slowdown=$(echo "$slowdown_response" | tr '[:upper:]' '[:lower:]')
+        echo "📊 SLOWDOWN setting: $slowdown"
+    else
+        echo "⚠️ Failed to get SLOWDOWN from SSM, defaulting to false"
+        slowdown="false"
+    fi
+    
+    # If SLOWDOWN=true, update EventBridge to slow cron and reset SLOWDOWN
+    if [ "$slowdown" = "true" ]; then
+        echo "🔄 SLOWDOWN=true: Updating EventBridge to slow cron..."
+        local SLOW_CRON="cron(0 10 */2 * ? *)"
+        if aws events put-rule --name "lol-data-pipeline-schedule" --schedule-expression "$SLOW_CRON" >/dev/null 2>&1; then
+            echo "✅ Updated EventBridge to slow cron: $SLOW_CRON"
+        else
+            echo "❌ Failed to update EventBridge to slow cron"
+        fi
+        
+        # Reset SLOWDOWN to false
+        update_ssm_parameter "SLOWDOWN" "false"
+        echo "📊 Reset SLOWDOWN to false"
+    fi
+
     # Show the Docker command being executed
     echo "🔍 Running Docker command:"
     echo "$DOCKER_CMD run --name ${CONTAINER_NAME} -d ${PORT_MAPPING} ${VOLUME_MAPPING} ${ENV_VARS} ${EXTRA_ARGS} ${ECR_URI}"
@@ -793,6 +819,10 @@ adjust_window_if_needed() {
     local start_epoch="$1"
     local end_epoch="$2"
     
+    # Hardcoded CRON expressions
+    local FAST_CRON="cron(0 10 * * ? *)"
+    local SLOW_CRON="cron(0 10 */2 * ? *)"
+    
     echo "🔄 Checking window adjustment logic..."
     
     # Get current BACKFILL setting from SSM
@@ -809,6 +839,29 @@ adjust_window_if_needed() {
     if [ "$backfill" = "true" ]; then
         echo "🔄 BACKFILL=true: Using current window $start_epoch to $end_epoch"
         return
+    fi
+    
+    # BACKFILL=false - Check FORCE_FAST first
+    echo "🚀 BACKFILL=false: Checking FORCE_FAST setting..."
+    
+    # Get current FORCE_FAST setting from SSM
+    local force_fast
+    if force_fast_response=$(aws ssm get-parameter --name "FORCE_FAST" --query "Parameter.Value" --output text 2>/dev/null); then
+        force_fast=$(echo "$force_fast_response" | tr '[:upper:]' '[:lower:]')
+        echo "⚡ FORCE_FAST setting: $force_fast"
+    else
+        echo "⚠️ Failed to get FORCE_FAST from SSM, defaulting to false"
+        force_fast="false"
+    fi
+    
+    # If FORCE_FAST=true, update EventBridge to fast cron and continue
+    if [ "$force_fast" = "true" ]; then
+        echo "🚀 FORCE_FAST=true: Updating EventBridge to fast cron..."
+        if aws events put-rule --name "lol-data-pipeline" --schedule-expression "$FAST_CRON" >/dev/null 2>&1; then
+            echo "✅ Updated EventBridge to fast cron: $FAST_CRON"
+        else
+            echo "❌ Failed to update EventBridge to fast cron"
+        fi
     fi
     
     # BACKFILL=false - Check ACCELERATE and adjust window
@@ -859,44 +912,19 @@ adjust_window_if_needed() {
                 current_end="$new_end"  # Use the calculated end as new start
                 continue
             else
-                # Normal mode but still too far ahead - calculate delay and update EventBridge
+                # Normal mode but still too far ahead - trigger slowdown
                 echo "⚠️ New end_epoch ($new_end) > current_time ($current_time) with ACCELERATE=false"
+                echo "🔄 Triggering slowdown mode..."
                 
-                local time_diff=$((new_end - current_time))
-                local hours_ahead=$((time_diff / 3600))
+                # Set SLOWDOWN=true and FORCE_FAST=false
+                update_ssm_parameter "SLOWDOWN" "true"
+                update_ssm_parameter "FORCE_FAST" "false"
                 
-                echo "📊 Time difference: ${hours_ahead} hours ahead"
+                echo "📊 Set SLOWDOWN=true, FORCE_FAST=false"
+                echo "🛑 Shutting down EC2 instance to allow window to catch up..."
                 
-                if [ $hours_ahead -le 24 ]; then
-                    echo "📅 Setting 1-day delay for EventBridge scheduler"
-                    # Mock EventBridge variables (to be implemented)
-                    local EVENTBRIDGE_SCHEDULE_NAME="lol-data-pipeline-schedule"
-                    local EVENTBRIDGE_RULE_ARN="arn:aws:events:us-east-2:123456789012:rule/lol-data-pipeline"
-                    local EVENTBRIDGE_TARGET_ARN="arn:aws:lambda:us-east-2:123456789012:function:lol-data-pipeline"
-                    
-                    echo "📋 EventBridge variables (mock):"
-                    echo "   Schedule Name: $EVENTBRIDGE_SCHEDULE_NAME"
-                    echo "   Rule ARN: $EVENTBRIDGE_RULE_ARN"
-                    echo "   Target ARN: $EVENTBRIDGE_TARGET_ARN"
-                    echo "🔧 TODO: Implement 1-day delay EventBridge schedule update"
-                elif [ $hours_ahead -le 48 ]; then
-                    echo "📅 Setting 2-day delay for EventBridge scheduler"
-                    # Mock EventBridge variables (to be implemented)
-                    local EVENTBRIDGE_SCHEDULE_NAME="lol-data-pipeline-schedule"
-                    local EVENTBRIDGE_RULE_ARN="arn:aws:events:us-east-2:123456789012:rule/lol-data-pipeline"
-                    local EVENTBRIDGE_TARGET_ARN="arn:aws:lambda:us-east-2:123456789012:function:lol-data-pipeline"
-                    
-                    echo "📋 EventBridge variables (mock):"
-                    echo "   Schedule Name: $EVENTBRIDGE_SCHEDULE_NAME"
-                    echo "   Rule ARN: $EVENTBRIDGE_RULE_ARN"
-                    echo "   Target ARN: $EVENTBRIDGE_TARGET_ARN"
-                    echo "🔧 TODO: Implement 2-day delay EventBridge schedule update"
-                else
-                    echo "⚠️ More than 48 hours ahead - keeping current window"
-                fi
-                
-                # Keep current window for now
-                update_window_json "$current_start" "$current_end" "s3://lol-match-jsons/production/state/next_window.json"
+                # Shutdown EC2 instance
+                shutdown_ec2_instance 30
                 return
             fi
         else
