@@ -158,7 +158,7 @@ def run_fetcher(config):
 
     data_to_upload = {
         "ranked_map": player_rank_map,
-        "matchlist": uniqueMatches
+        "matchlist": list(uniqueMatches)  # Convert set to list for JSON serialization
     }
 
     # Retry logic for critical S3 upload - 13 hours of work at stake

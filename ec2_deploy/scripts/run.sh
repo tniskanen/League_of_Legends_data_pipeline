@@ -134,7 +134,7 @@ load_environment_vars() {
     
     # Determine RUN_MODE and set corresponding variables
     if [ "${RUN_MODE}" == "test" ]; then
-        export PLAYER_LIMIT=10
+        export PLAYER_LIMIT=40
         export SOURCE='test'
     else
         export PLAYER_LIMIT=100000
@@ -341,7 +341,9 @@ EOF
             echo "🔄 Processing container exit logic..."
             handle_exit_logic "$EXIT_CODE"
             
-            handle_error 5 "Container exited immediately"
+            # Exit with the container's exit code instead of calling handle_error
+            echo "🛑 Container failed immediately, exiting with code $EXIT_CODE"
+            exit "$EXIT_CODE"
         fi
         
         # Update status
