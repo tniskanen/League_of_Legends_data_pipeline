@@ -140,6 +140,7 @@ def run_fetcher(config):
                 print(f"  Progress: {i}/{len(ranked_players)} players processed, {match_count} matches found")
                 
             tempMatches = matchList(player['puuid'], config['start_epoch'], config['end_epoch'], config['API_KEY'])
+            print(f"Found {len(tempMatches)} matches for player {i}")
             if isinstance(tempMatches, list):
                 matchesList.extend(tempMatches)
                 match_count += len(tempMatches)
