@@ -148,7 +148,7 @@ load_environment_vars() {
     
     # Determine RUN_MODE and set corresponding variables
     if [ "${RUN_MODE}" == "test" ]; then
-        export PLAYER_LIMIT=1000
+        export PLAYER_LIMIT=100
         export SOURCE='test'
     else
         export PLAYER_LIMIT=100000
