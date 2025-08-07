@@ -12,8 +12,9 @@ MAIN_SCRIPT="/home/ec2-user/scripts/run.sh"
 LOG_DIR="/tmp/container_logs"
 LOCK_FILE="/tmp/container_job.lock"
 
-# Create log directory
+# Create log directory with proper permissions
 mkdir -p "$LOG_DIR"
+chmod 755 "$LOG_DIR"
 
 # Check if another job is already running
 if [ -f "$LOCK_FILE" ]; then
@@ -41,6 +42,14 @@ LOG_FILE="$LOG_DIR/container_run_$TIMESTAMP.log"
 
 echo "🚀 Starting background container process..."
 echo "📋 Logs will be written to: $LOG_FILE"
+
+# Test if we can write to the log file
+if ! touch "$LOG_FILE" 2>/dev/null; then
+    echo "❌ Cannot write to log file: $LOG_FILE"
+    echo "🔍 Debug: Directory permissions: $(ls -ld "$LOG_DIR")"
+    echo "🔍 Debug: Current user: $(whoami)"
+    exit 1
+fi
 
 # Start run.sh in background and get its PID
 nohup "$MAIN_SCRIPT" > "$LOG_FILE" 2>&1 &
