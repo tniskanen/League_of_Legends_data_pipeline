@@ -82,7 +82,7 @@ def run_processor(config, matchlist):
                 print(f"Current time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_time))}")
                 
                 # Get unprocessed matches (from current index onwards)
-                unprocessed_matches = list(uniqueMatches)[i:]
+                unprocessed_matches = list(uniqueMatches)[i + 1:]
                 print(f"Saving {len(unprocessed_matches)} unprocessed matches to S3...")
                 
                 # Create data to upload with unprocessed matches and player rank map
@@ -129,7 +129,7 @@ def run_processor(config, matchlist):
             # Upload every 500 successful matches
             if successful_matches % 500 == 0:
                 print(f"Uploading batch of {successful_matches} matches to S3 (total processed: {total})")
-                thread = send_json(matches.copy(), config['BUCKET'])  # Explicit copy
+                thread = send_json(matches.copy(), config['BUCKET'], config['source'])  # Explicit copy
                 if thread:
                     active_threads.append(thread)
                 matches = []
@@ -142,7 +142,7 @@ def run_processor(config, matchlist):
         print(f"❌ Full traceback: {traceback.format_exc()}")
         
         # Always handle unprocessed matches due to unexpected error
-        unprocessed_matches = list(uniqueMatches)[current_index:] if current_index < len(uniqueMatches) else []
+        unprocessed_matches = list(uniqueMatches)[current_index + 1:] if current_index < len(uniqueMatches) - 1 else []
         print(f"⚠️ Error occurred during processing. Saving {len(unprocessed_matches)} unprocessed matches to S3...")
         
         # Create data to upload with unprocessed matches and player rank map
@@ -159,7 +159,7 @@ def run_processor(config, matchlist):
     # Upload remaining matches
     if matches:
         print(f"Uploading final batch of {len(matches)} matches")
-        thread = send_json(matches, config['BUCKET'])
+        thread = send_json(matches, config['BUCKET'], config['source'])
         if thread:
             active_threads.append(thread)
 
