@@ -15,6 +15,12 @@ LOCK_FILE="/tmp/container_job.lock"
 # Create log directory
 mkdir -p "$LOG_DIR"
 
+# Fix permissions if needed
+if [ ! -w "$LOG_DIR" ]; then
+    echo "🛠️ Fixing permissions on $LOG_DIR..."
+    sudo chown ec2-user:ec2-user "$LOG_DIR"
+fi
+
 # Check if another job is already running
 if [ -f "$LOCK_FILE" ]; then
     EXISTING_PID=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
