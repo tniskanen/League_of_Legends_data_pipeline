@@ -66,6 +66,11 @@ send_logs_to_cloudwatch() {
         return 1
     fi
     
+    # Debug: Check current region
+    echo "🔍 Debug: Current AWS region: $(aws configure get region 2>/dev/null || echo 'not set')"
+    echo "🔍 Debug: AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION"
+    echo "🔍 Debug: AWS_REGION: $AWS_REGION"
+    
     # Try to describe the specific log group
     if aws logs describe-log-groups --log-group-names "$log_group" --query 'logGroups[0].logGroupName' --output text 2>/dev/null | grep -q "$log_group"; then
         echo "✅ Log group already exists: $log_group"
@@ -77,13 +82,27 @@ send_logs_to_cloudwatch() {
             echo "✅ Log group created successfully: $log_group"
         else
             echo "⚠️ Failed to create CloudWatch log group"
-            echo "🔍 Debug: Checking if log group exists with different method..."
+            echo "🔍 Debug: Testing CloudWatch permissions..."
+            
+            # Test specific CloudWatch permissions
+            echo "🔍 Testing logs:CreateLogGroup permission..."
+            aws logs create-log-group --log-group-name "/test-permissions-$(date +%s)" 2>&1 | head -1
+            
+            echo "🔍 Testing logs:DescribeLogGroups permission..."
+            aws logs describe-log-groups --max-items 1 2>&1 | head -1
+            
+            echo "🔍 Testing logs:DescribeLogGroups with prefix..."
+            aws logs describe-log-groups --log-group-name-prefix "/aws/ec2/containers/" 2>&1 | head -5
+            
+            echo "🔍 Checking if log group exists with different method..."
             
             # Try alternative method to check if it exists
             if aws logs describe-log-groups --log-group-name-prefix "$log_group" --query "logGroups[?logGroupName=='$log_group'].logGroupName" --output text 2>/dev/null | grep -q "$log_group"; then
                 echo "✅ Log group exists (found via alternative method): $log_group"
             else
                 echo "❌ Log group does not exist and could not be created"
+                echo "⚠️ This appears to be an IAM permissions issue"
+                echo "⚠️ Required permissions: logs:CreateLogGroup, logs:DescribeLogGroups, logs:CreateLogStream, logs:PutLogEvents"
                 echo "⚠️ Continuing without CloudWatch logging"
                 return 1
             fi

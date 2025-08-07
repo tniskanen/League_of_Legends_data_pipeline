@@ -420,7 +420,9 @@ EOF
         
         # Show final logs summary
         echo "📋 Final container logs summary:"
-        $DOCKER_CMD logs ${CONTAINER_NAME} | tail -20
+        echo "=== FULL CONTAINER LOGS ==="
+        $DOCKER_CMD logs ${CONTAINER_NAME}
+        echo "=== END CONTAINER LOGS ==="
         
         # Send logs to CloudWatch if enabled
         if [ "${SEND_LOGS_TO_CLOUDWATCH:-false}" = "true" ]; then
