@@ -68,8 +68,22 @@ load_environment_vars() {
     # Get region from instance metadata
     if [ -z "$REGION" ]; then
         echo "🔍 Getting region from instance metadata..."
-        # Try metadata service first, fallback to hardcoded region
-        REGION=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/placement/region 2>/dev/null || echo "us-east-2")
+        # Try metadata service first with IMDSv2 support, fallback to hardcoded region
+        local token
+        token=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
+            -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" \
+            --connect-timeout 5 --max-time 10 2>/dev/null)
+        
+        if [ -n "$token" ]; then
+            # Use token to get region
+            REGION=$(curl -s -H "X-aws-ec2-metadata-token: $token" \
+                http://169.254.169.254/latest/meta-data/placement/region \
+                --connect-timeout 5 --max-time 10 2>/dev/null || echo "us-east-2")
+        else
+            # Fallback to IMDSv1
+            REGION=$(curl -s --connect-timeout 5 --max-time 10 \
+                http://169.254.169.254/latest/meta-data/placement/region 2>/dev/null || echo "us-east-2")
+        fi
         
         # Validate region format (should be like us-east-2, not HTML)
         if [[ ! "$REGION" =~ ^[a-z]+-[a-z]+-[0-9]+$ ]]; then
@@ -364,50 +378,37 @@ EOF
     if [ "${WAIT_FOR_EXIT:-true}" = "true" ]; then
         echo "⏳ Waiting for container to complete..."
         
-        # Start log following in background if requested
-        # Always follow logs for real-time monitoring
-        echo "📋 Following container logs in background..."
-        $DOCKER_CMD logs -f ${CONTAINER_NAME} &
-        LOGS_PID=$!
-        
-        # Wait for container to exit with reasonable monitoring for long-running containers
-        echo "🔍 Monitoring container status..."
-        local check_count=0
-        local check_interval=30  # Start with 30 seconds
-        
-        while true; do
-            # Check if container is still running
-            if ! $DOCKER_CMD ps -q -f "name=${CONTAINER_NAME}" | grep -q .; then
-                echo "✅ Container has completed"
-                break
-            fi
-            
-            # Increment check count and adjust interval for long-running containers
-            check_count=$((check_count + 1))
-            
-            # Adjust check interval based on how long we've been waiting
-            if [ $check_count -gt 120 ]; then  # After 1 hour, check every 5 minutes
-                check_interval=300
-            elif [ $check_count -gt 60 ]; then  # After 30 minutes, check every 2 minutes
-                check_interval=120
-            elif [ $check_count -gt 20 ]; then  # After 10 minutes, check every minute
-                check_interval=60
-            fi
-            
-            # Show progress every 10 checks
-            if [ $((check_count % 10)) -eq 0 ]; then
-                echo "⏳ Still waiting for container completion... (check $check_count, interval ${check_interval}s)"
-            fi
-            
-            sleep $check_interval
-        done
-        
-        # Stop log following
-        if [ -n "$LOGS_PID" ]; then
-            echo "🛑 Stopping log following..."
-            kill $LOGS_PID 2>/dev/null || true
-            wait $LOGS_PID 2>/dev/null || true
+            # Wait for container to exit with reasonable monitoring for long-running containers
+    echo "🔍 Monitoring container status..."
+    local check_count=0
+    local check_interval=30  # Start with 30 seconds
+    
+    while true; do
+        # Check if container is still running
+        if ! $DOCKER_CMD ps -q -f "name=${CONTAINER_NAME}" | grep -q .; then
+            echo "✅ Container has completed"
+            break
         fi
+        
+        # Increment check count and adjust interval for long-running containers
+        check_count=$((check_count + 1))
+        
+        # Adjust check interval based on how long we've been waiting
+        if [ $check_count -gt 120 ]; then  # After 1 hour, check every 5 minutes
+            check_interval=300
+        elif [ $check_count -gt 60 ]; then  # After 30 minutes, check every 2 minutes
+            check_interval=120
+        elif [ $check_count -gt 20 ]; then  # After 10 minutes, check every minute
+            check_interval=60
+        fi
+        
+        # Show progress every 10 checks
+        if [ $((check_count % 10)) -eq 0 ]; then
+            echo "⏳ Still waiting for container completion... (check $check_count, interval ${check_interval}s)"
+        fi
+        
+        sleep $check_interval
+    done
         
         # Get final status
         EXIT_CODE=$($DOCKER_CMD inspect ${CONTAINER_NAME} --format='{{.State.ExitCode}}')
@@ -417,26 +418,56 @@ EOF
         echo "🔄 Processing container exit logic..."
         handle_exit_logic "$EXIT_CODE"
         
-        # Show final logs if not already following
-        # Always show final logs summary since we always follow logs
-        echo "📋 Final container logs:"
-        $DOCKER_CMD logs ${CONTAINER_NAME} | tail -50
+        # Show final logs summary
+        echo "📋 Final container logs summary:"
+        $DOCKER_CMD logs ${CONTAINER_NAME} | tail -20
         
         # Send logs to CloudWatch if enabled
         if [ "${SEND_LOGS_TO_CLOUDWATCH:-false}" = "true" ]; then
-            # Get instance ID for log stream naming with better error handling
+            # Get instance ID for log stream naming with IMDSv2 support
             echo "🔍 Getting instance ID from metadata service..."
-            INSTANCE_ID=$(curl -s --connect-timeout 5 --max-time 10 http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null)
+            local token
+            
+            # Get IMDSv2 token first
+            token=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
+                -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" \
+                --connect-timeout 5 --max-time 10 2>/dev/null)
+            
+            if [ -n "$token" ]; then
+                # Use token to get instance ID
+                INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $token" \
+                    http://169.254.169.254/latest/meta-data/instance-id \
+                    --connect-timeout 5 --max-time 10 2>/dev/null)
+            else
+                # Fallback to IMDSv1 (may not work on newer instances)
+                INSTANCE_ID=$(curl -s --connect-timeout 5 --max-time 10 \
+                    http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null)
+            fi
             
             # Validate instance ID (should be i-xxxxxxxxx format)
             if [[ "$INSTANCE_ID" =~ ^i-[a-f0-9]+$ ]]; then
                 echo "✅ Instance ID retrieved: $INSTANCE_ID"
             else
-                echo "⚠️ Failed to get valid instance ID, using hardcoded value"
-                INSTANCE_ID="i-05b2706eb5c40af2d"  # Hardcoded based on your instance
+                echo "⚠️ Failed to get valid instance ID from metadata, trying AWS CLI..."
+                
+                # Try to get instance ID from AWS CLI
+                INSTANCE_ID=$(aws ec2 describe-instances \
+                    --filters "Name=instance-state-name,Values=running" \
+                    --query 'Reservations[0].Instances[0].InstanceId' \
+                    --output text 2>/dev/null)
+                
+                # Validate the AWS CLI result
+                if [[ "$INSTANCE_ID" =~ ^i-[a-f0-9]+$ ]]; then
+                    echo "✅ Instance ID retrieved via AWS CLI: $INSTANCE_ID"
+                else
+                    echo "⚠️ AWS CLI also failed, using hardcoded value"
+                    INSTANCE_ID="i-05b2706eb5c40af2d"  # Hardcoded based on your instance
+                fi
             fi
             
             echo "📤 Attempting to send logs to CloudWatch..."
+            echo "🔍 Debug: CLOUDWATCH_LOG_GROUP = '${CLOUDWATCH_LOG_GROUP}'"
+            echo "🔍 Debug: SEND_LOGS_TO_CLOUDWATCH = '${SEND_LOGS_TO_CLOUDWATCH}'"
             if send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"; then
                 echo "✅ CloudWatch logging completed successfully"
             else
@@ -494,6 +525,9 @@ EOF
         
         # Store emergency PID for cleanup
         echo "$EMERGENCY_PID" > "/tmp/emergency_shutdown.pid"
+        
+        # Wait a moment for the shutdown to be processed
+        sleep 5
         
         return $EXIT_CODE
     fi

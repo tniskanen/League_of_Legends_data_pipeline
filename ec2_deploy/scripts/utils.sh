@@ -42,6 +42,8 @@ send_logs_to_cloudwatch() {
     fi
     
     echo "📤 Sending logs to CloudWatch..."
+    echo "🔍 Debug: Log group name: $log_group"
+    echo "🔍 Debug: Instance ID: $instance_id"
     
     # Create log stream name with timestamp and validated instance ID
     local timestamp=$(date +%Y%m%d-%H%M%S)
@@ -54,14 +56,38 @@ send_logs_to_cloudwatch() {
     
     # Check if log group exists, create if not
     echo "📝 Checking if CloudWatch log group exists: $log_group"
-    if aws logs describe-log-groups --log-group-name-prefix "$log_group" --query "logGroups[?logGroupName=='$log_group'].logGroupName" --output text 2>/dev/null | grep -q "$log_group"; then
+    
+    # Debug: Test AWS CLI access
+    echo "🔍 Debug: Testing AWS CLI access..."
+    if aws sts get-caller-identity --query 'Arn' --output text 2>/dev/null; then
+        echo "✅ AWS CLI access confirmed"
+    else
+        echo "❌ AWS CLI access failed"
+        return 1
+    fi
+    
+    # Try to describe the specific log group
+    if aws logs describe-log-groups --log-group-names "$log_group" --query 'logGroups[0].logGroupName' --output text 2>/dev/null | grep -q "$log_group"; then
         echo "✅ Log group already exists: $log_group"
     else
-        echo "📝 Creating CloudWatch log group: $log_group"
-        aws logs create-log-group --log-group-name "$log_group" 2>/dev/null || {
-            echo "⚠️ Failed to create CloudWatch log group, continuing without CloudWatch logging"
-            return 1
-        }
+        echo "📝 Log group not found, attempting to create: $log_group"
+        
+        # Try to create the log group
+        if aws logs create-log-group --log-group-name "$log_group" 2>/dev/null; then
+            echo "✅ Log group created successfully: $log_group"
+        else
+            echo "⚠️ Failed to create CloudWatch log group"
+            echo "🔍 Debug: Checking if log group exists with different method..."
+            
+            # Try alternative method to check if it exists
+            if aws logs describe-log-groups --log-group-name-prefix "$log_group" --query "logGroups[?logGroupName=='$log_group'].logGroupName" --output text 2>/dev/null | grep -q "$log_group"; then
+                echo "✅ Log group exists (found via alternative method): $log_group"
+            else
+                echo "❌ Log group does not exist and could not be created"
+                echo "⚠️ Continuing without CloudWatch logging"
+                return 1
+            fi
+        fi
     fi
     
     # Create log stream
@@ -93,14 +119,43 @@ shutdown_ec2_instance() {
     
     echo "🛑 Initiating EC2 instance shutdown in ${delay_seconds} seconds..."
     
-    # Get instance ID
+    # Get instance ID using IMDSv2 (AWS now requires this)
     local instance_id
-    instance_id=$(curl -s --connect-timeout 5 --max-time 10 http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null)
+    local token
+    
+    # Get IMDSv2 token first
+    token=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
+        -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" \
+        --connect-timeout 5 --max-time 10 2>/dev/null)
+    
+    if [ -n "$token" ]; then
+        # Use token to get instance ID
+        instance_id=$(curl -s -H "X-aws-ec2-metadata-token: $token" \
+            http://169.254.169.254/latest/meta-data/instance-id \
+            --connect-timeout 5 --max-time 10 2>/dev/null)
+    else
+        # Fallback to IMDSv1 (may not work on newer instances)
+        instance_id=$(curl -s --connect-timeout 5 --max-time 10 \
+            http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null)
+    fi
     
     # Validate instance ID format (should be i-xxxxxxxxx, not HTML)
     if [[ ! "$instance_id" =~ ^i-[a-f0-9]+$ ]]; then
-        echo "⚠️ Invalid instance ID from metadata, using hardcoded value"
-        instance_id="i-05b2706eb5c40af2d"  # Hardcoded based on your instance
+        echo "⚠️ Invalid instance ID from metadata, trying AWS CLI..."
+        
+        # Try to get instance ID from AWS CLI
+        instance_id=$(aws ec2 describe-instances \
+            --filters "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].InstanceId' \
+            --output text 2>/dev/null)
+        
+        # Validate the AWS CLI result
+        if [[ ! "$instance_id" =~ ^i-[a-f0-9]+$ ]]; then
+            echo "⚠️ AWS CLI also failed, using hardcoded value"
+            instance_id="i-05b2706eb5c40af2d"  # Hardcoded based on your instance
+        else
+            echo "✅ Instance ID retrieved via AWS CLI: $instance_id"
+        fi
     fi
     
     if [ -z "$instance_id" ]; then
