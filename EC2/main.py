@@ -27,8 +27,12 @@ def main():
         try:
             run_leftovers(config)
         except Exception as e:
-            logger.warning(f"⚠️ Leftover processing failed: {e}")
-            logger.info("📋 Continuing with pipeline completion - leftover errors are non-critical")
+            print(f"⚠️ Leftover processing failed: {e}")
+            print(f"⚠️ Exception type: {type(e).__name__}")
+            print(f"⚠️ Exception details: {str(e)}")
+            import traceback
+            print(f"⚠️ Full traceback: {traceback.format_exc()}")
+            print("📋 Continuing with pipeline completion - leftover errors are non-critical")
         
         logger.info("🎉 Pipeline complete.")
         
@@ -36,7 +40,11 @@ def main():
         # Re-raise SystemExit to preserve exit code
         raise
     except Exception as e:
-        logger.error(f"❌ Unexpected error: {e}")
+        print(f"❌ UNEXPECTED ERROR: {e}")
+        print(f"❌ Exception type: {type(e).__name__}")
+        print(f"❌ Exception details: {str(e)}")
+        import traceback
+        print(f"❌ Full traceback: {traceback.format_exc()}")
         sys.exit(1)  # Critical failure
 
 if __name__ == "__main__":

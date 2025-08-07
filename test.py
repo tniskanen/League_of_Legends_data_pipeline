@@ -1,8 +1,8 @@
 from Utils.S3 import alter_s3_file
 
 new_window = {
-    'start_epoch': 1717737600,
-    'end_epoch': 1723008000
+    'start_epoch': 1753617600,
+    'end_epoch': 1753963200
 }
 
 bucket = 'lol-match-jsons'

@@ -17,6 +17,10 @@ except ImportError as e:
     sys.exit(7)
 except Exception as e:
     print(f"❌ Unexpected import error: {e}")
+    print(f"Exception type: {type(e).__name__}")
+    print(f"Exception details: {str(e)}")
+    import traceback
+    print(f"Full traceback: {traceback.format_exc()}")
     print(f"🛑 Matchlist processing failed due to unexpected import error")
     print(f"📋 Manual intervention required: Check container setup")
     sys.exit(7)
@@ -131,7 +135,11 @@ def run_processor(config, matchlist):
                 matches = []
 
     except Exception as e:
-        logger.error(f"Error during match processing: {e}")
+        print(f"❌ ERROR during match processing: {e}")
+        print(f"❌ Exception type: {type(e).__name__}")
+        print(f"❌ Exception details: {str(e)}")
+        import traceback
+        print(f"❌ Full traceback: {traceback.format_exc()}")
         
         # Always handle unprocessed matches due to unexpected error
         unprocessed_matches = list(uniqueMatches)[current_index:] if current_index < len(uniqueMatches) else []
