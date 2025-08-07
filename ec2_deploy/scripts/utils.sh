@@ -75,7 +75,13 @@ send_logs_to_cloudwatch() {
     if aws logs describe-log-groups --log-group-names "$log_group" --query 'logGroups[0].logGroupName' --output text 2>/dev/null | grep -q "$log_group"; then
         echo "✅ Log group already exists: $log_group"
     else
-        echo "📝 Log group not found, attempting to create: $log_group"
+        echo "📝 Log group not found with exact name, trying prefix search..."
+        
+        # Try with prefix search instead
+        if aws logs describe-log-groups --log-group-name-prefix "$log_group" --query "logGroups[?logGroupName=='$log_group'].logGroupName" --output text 2>/dev/null | grep -q "$log_group"; then
+            echo "✅ Log group already exists (found via prefix search): $log_group"
+        else
+            echo "📝 Log group not found, attempting to create: $log_group"
         
         # Try to create the log group
         if aws logs create-log-group --log-group-name "$log_group" 2>/dev/null; then
@@ -120,14 +126,43 @@ send_logs_to_cloudwatch() {
     
     # Upload log file to CloudWatch
     echo "📤 Uploading log file to CloudWatch..."
+    
+    # Check if log file exists and has content
+    if [ ! -f "$log_file" ]; then
+        echo "❌ Log file not found: $log_file"
+        return 1
+    fi
+    
+    if [ ! -s "$log_file" ]; then
+        echo "⚠️ Log file is empty: $log_file"
+        return 1
+    fi
+    
+    # Create a temporary JSON file for log events
+    local temp_json="/tmp/log_events_$(date +%s).json"
+    
+    # Convert log file to CloudWatch format
+    echo "🔍 Converting log file to CloudWatch format..."
+    cat "$log_file" | jq -R -s 'split("\n")[:-1] | map({timestamp: (now * 1000 | floor), message: .})' > "$temp_json" 2>/dev/null
+    
+    if [ $? -ne 0 ]; then
+        echo "❌ Failed to convert log file to JSON format"
+        return 1
+    fi
+    
+    # Upload to CloudWatch
     if aws logs put-log-events \
         --log-group-name "$log_group" \
         --log-stream-name "$log_stream" \
-        --log-events file://<(cat "$log_file" | jq -R -s 'split("\n")[:-1] | map({timestamp: (now * 1000 | floor), message: .})') >/dev/null 2>&1; then
+        --log-events file://"$temp_json" >/dev/null 2>&1; then
         echo "✅ Logs uploaded to CloudWatch successfully"
+        rm -f "$temp_json"
         return 0
     else
         echo "⚠️ Failed to upload logs to CloudWatch"
+        echo "🔍 Debug: Checking log file size: $(wc -l < "$log_file") lines"
+        echo "🔍 Debug: Checking JSON file size: $(wc -c < "$temp_json") bytes"
+        rm -f "$temp_json"
         return 1
     fi
 }

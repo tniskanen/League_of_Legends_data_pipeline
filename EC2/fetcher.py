@@ -132,6 +132,7 @@ def run_fetcher(config):
         for i, player in enumerate(ranked_players):
             puuid = player.get('puuid')
             if not puuid:
+                print(f"No puuid found for player {i}")
                 continue
                 
             # Progress indicator every 1000 players
