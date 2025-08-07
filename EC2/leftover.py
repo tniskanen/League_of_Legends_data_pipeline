@@ -103,7 +103,7 @@ def run_leftovers(config):
                         participant['rank'] = None
                         participant['lp'] = None
 
-                temp_data['source'] = config['SOURCE']
+                temp_data['source'] = config['source']
                 matches.append(temp_data)
                 successful_matches += 1
                 total += 1
