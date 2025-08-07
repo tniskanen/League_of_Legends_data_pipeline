@@ -12,9 +12,8 @@ MAIN_SCRIPT="/home/ec2-user/scripts/run.sh"
 LOG_DIR="/tmp/container_logs"
 LOCK_FILE="/tmp/container_job.lock"
 
-# Create log directory with proper permissions
+# Create log directory
 mkdir -p "$LOG_DIR"
-chmod 755 "$LOG_DIR"
 
 # Check if another job is already running
 if [ -f "$LOCK_FILE" ]; then
