@@ -227,7 +227,9 @@ def check_files(bucket, filepath):
         response = s3.list_objects_v2(Bucket=bucket, Prefix=filepath)
         
         if 'Contents' in response:
-            keys = [obj['Key'] for obj in response['Contents']]
+            # Filter out folders (objects that end with /) and the folder itself
+            keys = [obj['Key'] for obj in response['Contents'] 
+                   if not obj['Key'].endswith('/') and obj['Key'] != filepath.rstrip('/')]
             print(f"✓ Found {len(keys)} files at {filepath}")
             return keys
         else:
