@@ -71,57 +71,49 @@ send_logs_to_cloudwatch() {
     echo "🔍 Debug: AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION"
     echo "🔍 Debug: AWS_REGION: $AWS_REGION"
     
-    # Try to describe the specific log group
-    if aws logs describe-log-groups --log-group-names "$log_group" --query 'logGroups[0].logGroupName' --output text 2>/dev/null | grep -q "$log_group"; then
+    # Use prefix search method (this is the one that works) with hardcoded region
+    echo "🔍 Checking if log group exists using prefix search (region: us-east-2)..."
+    if aws logs describe-log-groups --region us-east-2 --log-group-name-prefix "$log_group" --query "logGroups[?logGroupName=='$log_group'].logGroupName" --output text 2>/dev/null | grep -q "$log_group"; then
         echo "✅ Log group already exists: $log_group"
     else
-        echo "📝 Log group not found with exact name, trying prefix search..."
+        echo "📝 Log group not found, attempting to create: $log_group"
         
-        # Try with prefix search instead
-        if aws logs describe-log-groups --log-group-name-prefix "$log_group" --query "logGroups[?logGroupName=='$log_group'].logGroupName" --output text 2>/dev/null | grep -q "$log_group"; then
-            echo "✅ Log group already exists (found via prefix search): $log_group"
+        # Try to create the log group
+        if aws logs create-log-group --region us-east-2 --log-group-name "$log_group" 2>/dev/null; then
+            echo "✅ Log group created successfully: $log_group"
         else
-            echo "📝 Log group not found, attempting to create: $log_group"
+            echo "⚠️ Failed to create CloudWatch log group"
+            echo "🔍 Debug: Testing CloudWatch permissions with explicit region..."
             
-            # Try to create the log group
-            if aws logs create-log-group --log-group-name "$log_group" 2>/dev/null; then
-                echo "✅ Log group created successfully: $log_group"
+            # Test specific CloudWatch permissions
+            echo "🔍 Testing logs:CreateLogGroup permission..."
+            aws logs create-log-group --region us-east-2 --log-group-name "/test-permissions-$(date +%s)" 2>&1 | head -1
+            
+            echo "🔍 Testing logs:DescribeLogGroups permission..."
+            aws logs describe-log-groups --region us-east-2 --max-items 1 2>&1 | head -1
+            
+            echo "🔍 Final check - does log group exist with prefix search?"
+            if aws logs describe-log-groups --region us-east-2 --log-group-name-prefix "$log_group" --query "logGroups[?logGroupName=='$log_group'].logGroupName" --output text 2>/dev/null | grep -q "$log_group"; then
+                echo "✅ Log group exists (found after creation attempt): $log_group"
             else
-                echo "⚠️ Failed to create CloudWatch log group"
-                echo "🔍 Debug: Testing CloudWatch permissions..."
-                
-                # Test specific CloudWatch permissions
-                echo "🔍 Testing logs:CreateLogGroup permission..."
-                aws logs create-log-group --log-group-name "/test-permissions-$(date +%s)" 2>&1 | head -1
-                
-                echo "🔍 Testing logs:DescribeLogGroups permission..."
-                aws logs describe-log-groups --max-items 1 2>&1 | head -1
-                
-                echo "🔍 Testing logs:DescribeLogGroups with prefix..."
-                aws logs describe-log-groups --log-group-name-prefix "/aws/ec2/containers/" 2>&1 | head -5
-                
-                echo "🔍 Checking if log group exists with different method..."
-                
-                # Try alternative method to check if it exists
-                if aws logs describe-log-groups --log-group-name-prefix "$log_group" --query "logGroups[?logGroupName=='$log_group'].logGroupName" --output text 2>/dev/null | grep -q "$log_group"; then
-                    echo "✅ Log group exists (found via alternative method): $log_group"
-                else
-                    echo "❌ Log group does not exist and could not be created"
-                    echo "⚠️ This appears to be an IAM permissions issue"
-                    echo "⚠️ Required permissions: logs:CreateLogGroup, logs:DescribeLogGroups, logs:CreateLogStream, logs:PutLogEvents"
-                    echo "⚠️ Continuing without CloudWatch logging"
-                    return 1
-                fi
+                echo "❌ Log group does not exist and could not be created"
+                echo "⚠️ This appears to be an IAM permissions issue"
+                echo "⚠️ Required permissions: logs:CreateLogGroup, logs:DescribeLogGroups, logs:CreateLogStream, logs:PutLogEvents"
+                echo "⚠️ Continuing without CloudWatch logging"
+                return 1
             fi
         fi
     fi
     
     # Create log stream
     echo "📝 Creating CloudWatch log stream: $log_stream"
-    if aws logs create-log-stream --log-group-name "$log_group" --log-stream-name "$log_stream" >/dev/null 2>&1; then
+    if aws logs create-log-stream --region us-east-2 --log-group-name "$log_group" --log-stream-name "$log_stream" 2>/dev/null; then
         echo "✅ Log stream created: $log_stream"
     else
-        echo "⚠️ Failed to create CloudWatch log stream, continuing without CloudWatch logging"
+        echo "⚠️ Failed to create CloudWatch log stream"
+        echo "🔍 Debug: Testing log stream creation with error output..."
+        aws logs create-log-stream --region us-east-2 --log-group-name "$log_group" --log-stream-name "$log_stream" 2>&1 | head -3
+        echo "⚠️ Continuing without CloudWatch logging"
         return 1
     fi
     
@@ -139,30 +131,68 @@ send_logs_to_cloudwatch() {
         return 1
     fi
     
+    # Check log file size and line count
+    local file_size=$(wc -c < "$log_file")
+    local line_count=$(wc -l < "$log_file")
+    echo "🔍 Log file stats: $line_count lines, $file_size bytes"
+    
+    # CloudWatch limits: 1MB per batch, 10,000 events per batch
+    # Limit to first 1000 lines to avoid size issues
+    local max_lines=1000
+    if [ $line_count -gt $max_lines ]; then
+        echo "⚠️ Log file has $line_count lines, limiting to first $max_lines lines for CloudWatch"
+    fi
+    
     # Create a temporary JSON file for log events
     local temp_json="/tmp/log_events_$(date +%s).json"
     
-    # Convert log file to CloudWatch format
-    echo "🔍 Converting log file to CloudWatch format..."
-    cat "$log_file" | jq -R -s 'split("\n")[:-1] | map({timestamp: (now * 1000 | floor), message: .})' > "$temp_json" 2>/dev/null
+    # Convert log file to CloudWatch format with line limit
+    echo "🔍 Converting log file to CloudWatch format (max $max_lines lines)..."
+    head -$max_lines "$log_file" | jq -R -s 'split("\n")[:-1] | map(select(length > 0)) | map({timestamp: (now * 1000 | floor), message: .})' > "$temp_json" 2>/dev/null
     
     if [ $? -ne 0 ]; then
         echo "❌ Failed to convert log file to JSON format"
+        echo "🔍 Debug: Checking if jq is available..."
+        which jq >/dev/null 2>&1 || echo "❌ jq command not found"
         return 1
     fi
     
-    # Upload to CloudWatch
+    # Check JSON file size
+    local json_size=$(wc -c < "$temp_json")
+    local json_events=$(jq length "$temp_json" 2>/dev/null || echo "unknown")
+    echo "🔍 JSON stats: $json_events events, $json_size bytes"
+    
+    # CloudWatch has a 1MB limit, so check if we're under that
+    if [ $json_size -gt 1048576 ]; then
+        echo "⚠️ JSON file too large ($json_size bytes > 1MB), reducing to first 500 lines"
+        head -500 "$log_file" | jq -R -s 'split("\n")[:-1] | map(select(length > 0)) | map({timestamp: (now * 1000 | floor), message: .})' > "$temp_json" 2>/dev/null
+        json_size=$(wc -c < "$temp_json")
+        echo "🔍 Reduced JSON size: $json_size bytes"
+    fi
+    
+    # Upload to CloudWatch with explicit region and error handling
+    echo "🔍 Uploading to CloudWatch (region: us-east-2)..."
     if aws logs put-log-events \
+        --region us-east-2 \
         --log-group-name "$log_group" \
         --log-stream-name "$log_stream" \
-        --log-events file://"$temp_json" >/dev/null 2>&1; then
+        --log-events file://"$temp_json" 2>/dev/null; then
         echo "✅ Logs uploaded to CloudWatch successfully"
         rm -f "$temp_json"
         return 0
     else
         echo "⚠️ Failed to upload logs to CloudWatch"
-        echo "🔍 Debug: Checking log file size: $(wc -l < "$log_file") lines"
-        echo "🔍 Debug: Checking JSON file size: $(wc -c < "$temp_json") bytes"
+        echo "🔍 Debug: Testing upload with error output..."
+        aws logs put-log-events \
+            --region us-east-2 \
+            --log-group-name "$log_group" \
+            --log-stream-name "$log_stream" \
+            --log-events file://"$temp_json" 2>&1 | head -5
+        
+        echo "🔍 Debug: Checking JSON file format..."
+        echo "First few characters: $(head -c 100 "$temp_json")"
+        echo "Last few characters: $(tail -c 100 "$temp_json")"
+        
         rm -f "$temp_json"
         return 1
     fi
