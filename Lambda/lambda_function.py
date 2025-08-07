@@ -60,16 +60,6 @@ def lambda_handler(event, context):
 
                 temp_player = flatten_json(player)
 
-                if 'tier' in game:
-                    temp_player['tier'] = game['tier']
-
-                # Only add 'division' if either 'rank' or 'division' exists
-                if 'rank' in game:
-                    temp_player['division'] = game['rank']
-
-                if 'lp' in game:
-                    temp_player['lp'] = game['lp']
-
                 temp_player['dataVersion'] = game['metadata']['dataVersion']
                 temp_player['matchId'] = game['metadata']['matchId']
 
