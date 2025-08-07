@@ -82,8 +82,8 @@ send_logs_to_cloudwatch() {
             echo "✅ Log group already exists (found via prefix search): $log_group"
         else
             echo "📝 Log group not found, attempting to create: $log_group"
-        
-        # Try to create the log group
+            
+            # Try to create the log group
         if aws logs create-log-group --log-group-name "$log_group" 2>/dev/null; then
             echo "✅ Log group created successfully: $log_group"
         else
