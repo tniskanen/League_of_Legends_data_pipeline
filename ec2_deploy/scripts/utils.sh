@@ -84,33 +84,34 @@ send_logs_to_cloudwatch() {
             echo "📝 Log group not found, attempting to create: $log_group"
             
             # Try to create the log group
-        if aws logs create-log-group --log-group-name "$log_group" 2>/dev/null; then
-            echo "✅ Log group created successfully: $log_group"
-        else
-            echo "⚠️ Failed to create CloudWatch log group"
-            echo "🔍 Debug: Testing CloudWatch permissions..."
-            
-            # Test specific CloudWatch permissions
-            echo "🔍 Testing logs:CreateLogGroup permission..."
-            aws logs create-log-group --log-group-name "/test-permissions-$(date +%s)" 2>&1 | head -1
-            
-            echo "🔍 Testing logs:DescribeLogGroups permission..."
-            aws logs describe-log-groups --max-items 1 2>&1 | head -1
-            
-            echo "🔍 Testing logs:DescribeLogGroups with prefix..."
-            aws logs describe-log-groups --log-group-name-prefix "/aws/ec2/containers/" 2>&1 | head -5
-            
-            echo "🔍 Checking if log group exists with different method..."
-            
-            # Try alternative method to check if it exists
-            if aws logs describe-log-groups --log-group-name-prefix "$log_group" --query "logGroups[?logGroupName=='$log_group'].logGroupName" --output text 2>/dev/null | grep -q "$log_group"; then
-                echo "✅ Log group exists (found via alternative method): $log_group"
+            if aws logs create-log-group --log-group-name "$log_group" 2>/dev/null; then
+                echo "✅ Log group created successfully: $log_group"
             else
-                echo "❌ Log group does not exist and could not be created"
-                echo "⚠️ This appears to be an IAM permissions issue"
-                echo "⚠️ Required permissions: logs:CreateLogGroup, logs:DescribeLogGroups, logs:CreateLogStream, logs:PutLogEvents"
-                echo "⚠️ Continuing without CloudWatch logging"
-                return 1
+                echo "⚠️ Failed to create CloudWatch log group"
+                echo "🔍 Debug: Testing CloudWatch permissions..."
+                
+                # Test specific CloudWatch permissions
+                echo "🔍 Testing logs:CreateLogGroup permission..."
+                aws logs create-log-group --log-group-name "/test-permissions-$(date +%s)" 2>&1 | head -1
+                
+                echo "🔍 Testing logs:DescribeLogGroups permission..."
+                aws logs describe-log-groups --max-items 1 2>&1 | head -1
+                
+                echo "🔍 Testing logs:DescribeLogGroups with prefix..."
+                aws logs describe-log-groups --log-group-name-prefix "/aws/ec2/containers/" 2>&1 | head -5
+                
+                echo "🔍 Checking if log group exists with different method..."
+                
+                # Try alternative method to check if it exists
+                if aws logs describe-log-groups --log-group-name-prefix "$log_group" --query "logGroups[?logGroupName=='$log_group'].logGroupName" --output text 2>/dev/null | grep -q "$log_group"; then
+                    echo "✅ Log group exists (found via alternative method): $log_group"
+                else
+                    echo "❌ Log group does not exist and could not be created"
+                    echo "⚠️ This appears to be an IAM permissions issue"
+                    echo "⚠️ Required permissions: logs:CreateLogGroup, logs:DescribeLogGroups, logs:CreateLogStream, logs:PutLogEvents"
+                    echo "⚠️ Continuing without CloudWatch logging"
+                    return 1
+                fi
             fi
         fi
     fi
