@@ -86,13 +86,13 @@ def send_json(data, bucket, custom_date=None, source=None):
     timestamp = int(time.time() * 1000)
     match_count = len(data_copy)
 
-    s3_key_hive = f"matches/year={year}/month={month}/day={day}/batch_{timestamp}_{match_count}_matches.json"
-    
-    # Apply source prefix if source is 'test'
+    # Create base key structure
     if source == 'test':
-        s3_key = f"{source}/{s3_key_hive}"
+        s3_key_hive = f"matches/year={year}/month={month}/day={day}/test_batch_{timestamp}_{match_count}_matches.json"
     else:
-        s3_key = s3_key_hive
+        s3_key_hive = f"matches/year={year}/month={month}/day={day}/batch_{timestamp}_{match_count}_matches.json"
+    
+    s3_key = s3_key_hive
 
     # Enhance the JSON with metadata
     enhanced_data = {

@@ -151,22 +151,22 @@ def run_leftovers(config):
         print(f"{leftover} completed!")
         print(f"Matches with no data: {no_data}")
 
-        # Only delete leftover if ALL matches were processed (completely emptied)
-        if current_index >= len(uniqueMatches) - 1 and not api_expired:
-            alter_s3_file(config['BUCKET'], leftover, 'delete')
-            print(f"✅ Leftover completely processed and deleted from S3")
-        else:
-            print(f"⚠️ Leftover kept in S3 - not fully processed (completed: {current_index + 1}/{len(uniqueMatches)}, API expired: {api_expired})")
-            # Overwrite leftover with remaining unprocessed matches
-            if current_index < len(uniqueMatches) - 1:
-                unprocessed_matches = list(uniqueMatches)[current_index + 1:]
-                print(f"🔄 Overwriting leftover with {len(unprocessed_matches)} remaining matches...")
-                data_to_upload = {
-                    "ranked_map": player_rank_map,
-                    "matchlist": unprocessed_matches
-                }
-                alter_s3_file(config['BUCKET'], leftover, 'overwrite', data_to_upload)
-                print(f"✅ Leftover updated with remaining matches")
+    # Only delete leftover if ALL matches were processed (completely emptied)
+    if current_index >= len(uniqueMatches) - 1 and not api_expired:
+        alter_s3_file(config['BUCKET'], leftover, 'delete')
+        print(f"✅ Leftover completely processed and deleted from S3")
+    else:
+        print(f"⚠️ Leftover kept in S3 - not fully processed (completed: {current_index + 1}/{len(uniqueMatches)}, API expired: {api_expired})")
+        # Overwrite leftover with remaining unprocessed matches
+        if current_index < len(uniqueMatches) - 1:
+            unprocessed_matches = list(uniqueMatches)[current_index + 1:]
+            print(f"🔄 Overwriting leftover with {len(unprocessed_matches)} remaining matches...")
+            data_to_upload = {
+                "ranked_map": player_rank_map,
+                "matchlist": unprocessed_matches
+            }
+            alter_s3_file(config['BUCKET'], leftover, 'overwrite', data_to_upload)
+            print(f"✅ Leftover updated with remaining matches")
     
     
     print(f"Total matches processed: {total}")
