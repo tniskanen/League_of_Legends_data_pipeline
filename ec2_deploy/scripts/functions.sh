@@ -148,6 +148,15 @@ handle_exit_logic() {
         backfill_value="true"
         accelerate_value="true"
         echo "📊 Exit code $exit_code: Setting BACKFILL=true, ACCELERATE=true (catch-up mode)"
+        
+        # Apply current start and end epoch to backfill state
+        if [ -n "$start_epoch" ] && [ -n "$end_epoch" ]; then
+            echo "🔄 Applying current window ($start_epoch to $end_epoch) to backfill state..."
+            update_window_json "$start_epoch" "$end_epoch" "s3://lol-match-jsons/production/state/next_window.json"
+            echo "✅ Backfill window updated: $start_epoch to $end_epoch"
+        else
+            echo "⚠️ Warning: start_epoch or end_epoch not available for backfill state update"
+        fi
     else
         echo "⚠️ Unknown exit code $exit_code, defaulting to production"
         backfill_value="false"
