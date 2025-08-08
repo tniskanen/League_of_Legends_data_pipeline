@@ -108,13 +108,13 @@ def run_leftovers(config):
                 successful_matches += 1
                 total += 1
 
-                            # Upload every 500 successful matches
-            if successful_matches % 500 == 0:
-                print(f"Uploading batch of {successful_matches} matches to S3 (total processed: {total})")
-                thread = send_json(matches.copy(), config['BUCKET'], config['source'])  # Explicit copy
-                if thread:
-                    active_threads.append(thread)
-                matches = []
+                # Upload every 500 successful matches
+                if successful_matches % 500 == 0:
+                    print(f"Uploading batch of {successful_matches} matches to S3 (total processed: {total})")
+                    thread = send_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'])  # Explicit copy
+                    if thread:
+                        active_threads.append(thread)
+                    matches = []
 
         except Exception as e:
             logger.error(f"Error during match processing: {e}")
@@ -135,12 +135,12 @@ def run_leftovers(config):
                 alter_s3_file(config['BUCKET'], key, 'overwrite', data_to_upload)
                 print(f"✅ Date Overwritten to {key}")
 
-            # Upload remaining matches
-    if matches:
-        print(f"Uploading final batch of {len(matches)} matches")
-        thread = send_json(matches, config['BUCKET'], config['source'])
-        if thread:
-            active_threads.append(thread)
+        # Upload remaining matches
+        if matches:
+            print(f"Uploading final batch of {len(matches)} matches")
+            thread = send_json(data=matches, bucket=config['BUCKET'], source=config['source'])
+            if thread:
+                active_threads.append(thread)
 
         # Wait for all uploads
         print(f"Waiting for {len(active_threads)} upload threads to complete...")
@@ -151,22 +151,15 @@ def run_leftovers(config):
         print(f"{leftover} completed!")
         print(f"Matches with no data: {no_data}")
 
-    # Only delete leftover if ALL matches were processed (completely emptied)
-    if current_index >= len(uniqueMatches) - 1 and not api_expired:
-        alter_s3_file(config['BUCKET'], leftover, 'delete')
-        print(f"✅ Leftover completely processed and deleted from S3")
-    else:
-        print(f"⚠️ Leftover kept in S3 - not fully processed (completed: {current_index + 1}/{len(uniqueMatches)}, API expired: {api_expired})")
-        # Overwrite leftover with remaining unprocessed matches
-        if current_index < len(uniqueMatches) - 1:
-            unprocessed_matches = list(uniqueMatches)[current_index + 1:]
-            print(f"🔄 Overwriting leftover with {len(unprocessed_matches)} remaining matches...")
-            data_to_upload = {
-                "ranked_map": player_rank_map,
-                "matchlist": unprocessed_matches
-            }
-            alter_s3_file(config['BUCKET'], leftover, 'overwrite', data_to_upload)
-            print(f"✅ Leftover updated with remaining matches")
+        # Check if this leftover file was completely processed
+        if current_index >= len(uniqueMatches) - 1 and not api_expired:
+            # All matches processed - delete the leftover file
+            alter_s3_file(config['BUCKET'], leftover, 'delete')
+            print(f"✅ Leftover completely processed and deleted from S3")
+        else:
+            # Not fully processed - file was already overwritten with remaining data
+            print(f"⚠️ Leftover not fully processed (completed: {current_index + 1}/{len(uniqueMatches)}, API expired: {api_expired})")
+            print(f"📝 File was overwritten with remaining unprocessed matches")
     
     
     print(f"Total matches processed: {total}")
