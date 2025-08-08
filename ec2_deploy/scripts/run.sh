@@ -188,7 +188,62 @@ load_environment_vars() {
     # Handle window adjustment based on BACKFILL and ACCELERATE settings
     echo "🔄 Checking window adjustment logic..."
     if ! adjust_window_if_needed "$start_epoch" "$end_epoch"; then
-        echo "🛑 Window adjustment triggered shutdown - exiting script"
+        echo "🛑 Window adjustment triggered shutdown - sending logs before exit"
+        
+        # Send logs to CloudWatch before shutting down
+        if [ "${SEND_LOGS_TO_CLOUDWATCH:-false}" = "true" ]; then
+            # Get instance ID for log stream naming with IMDSv2 support
+            echo "🔍 Getting instance ID from metadata service..."
+            local token
+            
+            # Get IMDSv2 token first
+            token=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
+                -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" \
+                --connect-timeout 5 --max-time 10 2>/dev/null)
+            
+            if [ -n "$token" ]; then
+                # Use token to get instance ID
+                INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $token" \
+                    http://169.254.169.254/latest/meta-data/instance-id \
+                    --connect-timeout 5 --max-time 10 2>/dev/null)
+            else
+                # Fallback to IMDSv1 (may not work on newer instances)
+                INSTANCE_ID=$(curl -s --connect-timeout 5 --max-time 10 \
+                    http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null)
+            fi
+            
+            # Validate instance ID (should be i-xxxxxxxxx format)
+            if [[ "$INSTANCE_ID" =~ ^i-[a-f0-9]+$ ]]; then
+                echo "✅ Instance ID retrieved: $INSTANCE_ID"
+            else
+                echo "⚠️ Failed to get valid instance ID from metadata, trying AWS CLI..."
+                
+                # Try to get instance ID from AWS CLI
+                INSTANCE_ID=$(aws ec2 describe-instances \
+                    --filters "Name=instance-state-name,Values=running" \
+                    --query 'Reservations[0].Instances[0].InstanceId' \
+                    --output text 2>/dev/null)
+                
+                # Validate the AWS CLI result
+                if [[ "$INSTANCE_ID" =~ ^i-[a-f0-9]+$ ]]; then
+                    echo "✅ Instance ID retrieved via AWS CLI: $INSTANCE_ID"
+                else
+                    echo "⚠️ AWS CLI also failed, using hardcoded value"
+                    INSTANCE_ID="i-05b2706eb5c40af2d"  # Hardcoded based on your instance
+                fi
+            fi
+            
+            echo "📤 Attempting to send shutdown logs to CloudWatch..."
+            echo "🔍 Debug: CLOUDWATCH_LOG_GROUP = '${CLOUDWATCH_LOG_GROUP}'"
+            echo "🔍 Debug: SEND_LOGS_TO_CLOUDWATCH = '${SEND_LOGS_TO_CLOUDWATCH}'"
+            if send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"; then
+                echo "✅ CloudWatch logging completed successfully before shutdown"
+            else
+                echo "⚠️ CloudWatch logging failed, but continuing with shutdown"
+            fi
+        fi
+        
+        echo "🛑 Exiting script after slowdown trigger"
         exit 0
     fi
     
