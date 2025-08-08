@@ -114,7 +114,7 @@ adjust_window_if_needed() {
                 
                 # Shutdown EC2 instance
                 shutdown_ec2_instance 30
-                return
+                return 1  # Return failure status to indicate shutdown
             fi
         else
             # New end_epoch is in the past - safe to update

@@ -187,7 +187,10 @@ load_environment_vars() {
     
     # Handle window adjustment based on BACKFILL and ACCELERATE settings
     echo "🔄 Checking window adjustment logic..."
-    adjust_window_if_needed "$start_epoch" "$end_epoch"
+    if ! adjust_window_if_needed "$start_epoch" "$end_epoch"; then
+        echo "🛑 Window adjustment triggered shutdown - exiting script"
+        exit 0
+    fi
     
     # Re-export the potentially updated epochs
     export start_epoch=$(jq -r '.start_epoch' window.json)
