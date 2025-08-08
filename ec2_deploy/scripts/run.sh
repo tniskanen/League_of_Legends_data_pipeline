@@ -419,10 +419,8 @@ EOF
         handle_exit_logic "$EXIT_CODE"
         
         # Show final logs summary
-        echo "📋 Final container logs summary:"
-        echo "=== FULL CONTAINER LOGS ==="
-        $DOCKER_CMD logs ${CONTAINER_NAME}
-        echo "=== END CONTAINER LOGS ==="
+        echo "📋 Container execution completed"
+        echo "📋 All logs have been captured and displayed above"
         
         # Send logs to CloudWatch if enabled
         if [ "${SEND_LOGS_TO_CLOUDWATCH:-false}" = "true" ]; then
