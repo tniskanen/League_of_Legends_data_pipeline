@@ -472,10 +472,23 @@ EOF
                 fi
             fi
             
-            echo "📤 Attempting to send container logs to CloudWatch..."
+            # Create combined log file with both shell script and container logs
+            COMBINED_LOG_FILE="$LOG_DIR/combined_logs_$(date +%Y%m%d_%H%M%S).log"
+            echo "📋 Creating combined log file: $COMBINED_LOG_FILE"
+            
+            # Add shell script logs first
+            echo "=== SHELL SCRIPT LOGS ===" > "$COMBINED_LOG_FILE"
+            cat "$LOG_FILE" >> "$COMBINED_LOG_FILE"
+            
+            # Add container logs
+            echo "" >> "$COMBINED_LOG_FILE"
+            echo "=== CONTAINER LOGS ===" >> "$COMBINED_LOG_FILE"
+            cat "$CONTAINER_LOG_FILE" >> "$COMBINED_LOG_FILE"
+            
+            echo "📤 Attempting to send combined logs to CloudWatch..."
             echo "🔍 Debug: CLOUDWATCH_LOG_GROUP = '${CLOUDWATCH_LOG_GROUP}'"
             echo "🔍 Debug: SEND_LOGS_TO_CLOUDWATCH = '${SEND_LOGS_TO_CLOUDWATCH}'"
-            if send_logs_to_cloudwatch "$CONTAINER_LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"; then
+            if send_logs_to_cloudwatch "$COMBINED_LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"; then
                 echo "✅ CloudWatch logging completed successfully"
             else
                 echo "⚠️ CloudWatch logging failed, but continuing with cleanup"
