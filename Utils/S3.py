@@ -72,15 +72,26 @@ def send_json(data, bucket, custom_date=None, source=None):
     
     # Get date for folder structure
     if custom_date:
-        upload_date = custom_date
+        # Handle case where custom_date might be a string
+        if isinstance(custom_date, str):
+            try:
+                upload_date = datetime.fromisoformat(custom_date.replace('Z', '+00:00'))
+            except ValueError:
+                print(f"⚠️ Warning: Could not parse custom_date string '{custom_date}', using current time")
+                upload_date = datetime.now(timezone.utc)
+        else:
+            upload_date = custom_date
     else:
         upload_date = datetime.now(timezone.utc)
+    
+    # Ensure upload_date is timezone-aware
+    if upload_date.tzinfo is None:
+        upload_date = upload_date.replace(tzinfo=timezone.utc)
     
     # Create date-based folder structure
     year = upload_date.strftime('%Y')
     month = upload_date.strftime('%m')
     day = upload_date.strftime('%d')
-    hour = upload_date.strftime('%H')
     
     # Create hierarchical key structure
     timestamp = int(time.time() * 1000)
