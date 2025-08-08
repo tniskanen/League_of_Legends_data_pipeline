@@ -129,7 +129,7 @@ def run_processor(config, matchlist):
             # Upload every 500 successful matches
             if successful_matches % 500 == 0:
                 print(f"Uploading batch of {successful_matches} matches to S3 (total processed: {total})")
-                thread = send_json(matches.copy(), config['BUCKET'], config['source'])  # Explicit copy
+                thread = send_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'])  # Explicit copy
                 if thread:
                     active_threads.append(thread)
                 matches = []
@@ -159,7 +159,7 @@ def run_processor(config, matchlist):
     # Upload remaining matches
     if matches:
         print(f"Uploading final batch of {len(matches)} matches")
-        thread = send_json(matches, config['BUCKET'], config['source'])
+        thread = send_json(data=matches, bucket=config['BUCKET'], source=config['source'])
         if thread:
             active_threads.append(thread)
 
