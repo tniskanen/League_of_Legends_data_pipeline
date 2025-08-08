@@ -102,7 +102,7 @@ load_environment_vars() {
     export AUTO_CLEANUP="${AUTO_CLEANUP:-true}"
     export CLEANUP_VOLUMES="${CLEANUP_VOLUMES:-false}"
     export AUTO_SHUTDOWN="${AUTO_SHUTDOWN:-true}"
-    export SEND_LOGS_TO_CLOUDWATCH="${SEND_LOGS_TO_CLOUDWATCH:-false}"
+    export SEND_LOGS_TO_CLOUDWATCH="${SEND_LOGS_TO_CLOUDWATCH:-true}"
     export CLOUDWATCH_LOG_GROUP="${CLOUDWATCH_LOG_GROUP:-/aws/ec2/containers/default}"
     export CLOUDWATCH_RETENTION_DAYS="${CLOUDWATCH_RETENTION_DAYS:-7}"
     
@@ -418,10 +418,15 @@ EOF
         echo "🔄 Processing container exit logic..."
         handle_exit_logic "$EXIT_CODE"
         
+        # Capture container logs to file
+        CONTAINER_LOG_FILE="$LOG_DIR/container_logs_$(date +%Y%m%d_%H%M%S).log"
+        echo "📋 Capturing container logs to: $CONTAINER_LOG_FILE"
+        $DOCKER_CMD logs ${CONTAINER_NAME} > "$CONTAINER_LOG_FILE" 2>&1
+        
         # Show final logs summary
         echo "📋 Final container logs summary:"
         echo "=== CONTAINER LOGS ==="
-        $DOCKER_CMD logs ${CONTAINER_NAME}
+        cat "$CONTAINER_LOG_FILE"
         echo "=== END CONTAINER LOGS ==="
         
         # Send logs to CloudWatch if enabled
@@ -467,10 +472,10 @@ EOF
                 fi
             fi
             
-            echo "📤 Attempting to send logs to CloudWatch..."
+            echo "📤 Attempting to send container logs to CloudWatch..."
             echo "🔍 Debug: CLOUDWATCH_LOG_GROUP = '${CLOUDWATCH_LOG_GROUP}'"
             echo "🔍 Debug: SEND_LOGS_TO_CLOUDWATCH = '${SEND_LOGS_TO_CLOUDWATCH}'"
-            if send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"; then
+            if send_logs_to_cloudwatch "$CONTAINER_LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"; then
                 echo "✅ CloudWatch logging completed successfully"
             else
                 echo "⚠️ CloudWatch logging failed, but continuing with cleanup"
