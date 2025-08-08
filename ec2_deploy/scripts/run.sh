@@ -418,16 +418,13 @@ EOF
         echo "🔄 Processing container exit logic..."
         handle_exit_logic "$EXIT_CODE"
         
-        # Capture container logs to file
+        # Capture container logs to file (silently to avoid duplication)
         CONTAINER_LOG_FILE="$LOG_DIR/container_logs_$(date +%Y%m%d_%H%M%S).log"
         echo "📋 Capturing container logs to: $CONTAINER_LOG_FILE"
         $DOCKER_CMD logs ${CONTAINER_NAME} > "$CONTAINER_LOG_FILE" 2>&1
         
-        # Show final logs summary
-        echo "📋 Final container logs summary:"
-        echo "=== CONTAINER LOGS ==="
-        cat "$CONTAINER_LOG_FILE"
-        echo "=== END CONTAINER LOGS ==="
+        # Show final logs summary (just the count, not the content to avoid duplication)
+        echo "📋 Container logs captured: $(wc -l < "$CONTAINER_LOG_FILE") lines"
         
         # Send logs to CloudWatch if enabled
         if [ "${SEND_LOGS_TO_CLOUDWATCH:-false}" = "true" ]; then
