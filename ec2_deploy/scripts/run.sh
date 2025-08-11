@@ -116,6 +116,8 @@ load_environment_vars() {
     export API_KEY_EXPIRATION=$(aws ssm get-parameter --name "API_KEY_EXPIRATION" --with-decryption --query "Parameter.Value" --output text) 
     echo "🔍 Loading BACKFILL..."
     export BACKFILL=$(aws ssm get-parameter --name "BACKFILL" --query "Parameter.Value" --output text)
+    echo "🔍 Loading LAMBDA_START_EC2_ARN..."
+    export LAMBDA_START_EC2_ARN=$(aws ssm get-parameter --name "LAMBDA_START_EC2_ARN" --query "Parameter.Value" --output text)
 
     echo "🔍 AWS_ACCOUNT_ID: ${AWS_ACCOUNT_ID:0:10}..." # Show first 10 chars
     if [ -z "$AWS_ACCOUNT_ID" ]; then
@@ -382,7 +384,7 @@ EOF
         
         # Try to update the schedule with full error output
         echo "🔍 Debug: Running update-schedule command..."
-        if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$SLOW_CRON" 2>&1; then
+        if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$SLOW_CRON" --flexible-time-window "OFF" --target "$LAMBDA_START_EC2_ARN" 2>&1; then
             echo "✅ Updated EventBridge Scheduler to slow cron: $SLOW_CRON"
         else
             echo "❌ Failed to update EventBridge Scheduler to slow cron"
@@ -390,7 +392,7 @@ EOF
             
             # Try alternative approach - maybe we need to specify the group
             echo "🔍 Debug: Trying with default group..."
-            if aws scheduler update-schedule --name "lol-data-pipeline" --group-name "default" --schedule-expression "$SLOW_CRON" 2>&1; then
+            if aws scheduler update-schedule --name "lol-data-pipeline" --group-name "default" --schedule-expression "$SLOW_CRON" --flexible-time-window "OFF" --target "$LAMBDA_START_EC2_ARN" 2>&1; then
                 echo "✅ Updated EventBridge Scheduler to slow cron (with group): $SLOW_CRON"
             else
                 echo "❌ Failed with group specification too"

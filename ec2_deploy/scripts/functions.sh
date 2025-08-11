@@ -53,7 +53,7 @@ adjust_window_if_needed() {
         
         # Try to update the schedule with full error output
         echo "🔍 Debug: Running update-schedule command..."
-        if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$FAST_CRON" 2>&1; then
+        if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$FAST_CRON" --flexible-time-window "OFF" --target "$LAMBDA_START_EC2_ARN" 2>&1; then
             echo "✅ Updated EventBridge Scheduler to fast cron: $FAST_CRON"
         else
             echo "❌ Failed to update EventBridge Scheduler to fast cron"
@@ -61,7 +61,7 @@ adjust_window_if_needed() {
             
             # Try alternative approach - maybe we need to specify the group
             echo "🔍 Debug: Trying with default group..."
-            if aws scheduler update-schedule --name "lol-data-pipeline" --group-name "default" --schedule-expression "$FAST_CRON" 2>&1; then
+            if aws scheduler update-schedule --name "lol-data-pipeline" --group-name "default" --schedule-expression "$FAST_CRON" --flexible-time-window "OFF" --target "$LAMBDA_START_EC2_ARN" 2>&1; then
                 echo "✅ Updated EventBridge Scheduler to fast cron (with group): $FAST_CRON"
             else
                 echo "❌ Failed with group specification too"
