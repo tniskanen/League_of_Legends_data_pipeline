@@ -375,11 +375,26 @@ EOF
         aws scheduler list-schedules --name-prefix "lol" 2>&1 | head -10
         
         echo "🔍 Debug: Attempting to update schedule 'lol-data-pipeline' to slow cron: $SLOW_CRON"
+        
+        # First, get the current schedule details to see what we're working with
+        echo "🔍 Debug: Getting current schedule details..."
+        aws scheduler get-schedule --name "lol-data-pipeline" 2>&1 | head -20
+        
+        # Try to update the schedule with full error output
+        echo "🔍 Debug: Running update-schedule command..."
         if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$SLOW_CRON" 2>&1; then
             echo "✅ Updated EventBridge Scheduler to slow cron: $SLOW_CRON"
         else
             echo "❌ Failed to update EventBridge Scheduler to slow cron"
-            echo "🔍 Debug: This might mean the schedule name 'lol-data-pipeline' doesn't exist"
+            echo "🔍 Debug: Full error output above should show why it failed"
+            
+            # Try alternative approach - maybe we need to specify the group
+            echo "🔍 Debug: Trying with default group..."
+            if aws scheduler update-schedule --name "lol-data-pipeline" --group-name "default" --schedule-expression "$SLOW_CRON" 2>&1; then
+                echo "✅ Updated EventBridge Scheduler to slow cron (with group): $SLOW_CRON"
+            else
+                echo "❌ Failed with group specification too"
+            fi
         fi
         
         # Reset SLOWDOWN to false
