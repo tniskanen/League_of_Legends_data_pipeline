@@ -51,22 +51,33 @@ adjust_window_if_needed() {
         echo "🔍 Debug: Getting current schedule details..."
         aws scheduler get-schedule --name "lol-data-pipeline" 2>&1 | head -20
         
-        # Load LAMBDA_START_EC2_ARN from SSM when we actually need it
+        # Load LAMBDA_START_EC2_ARN and EBS_ARN from SSM when we actually need it
         echo "🔍 Loading LAMBDA_START_EC2_ARN from SSM for scheduler update..."
         local LAMBDA_START_EC2_ARN
         LAMBDA_START_EC2_ARN=$(aws ssm get-parameter --name "LAMBDA_START_EC2_ARN" --query "Parameter.Value" --output text)
         
-        # Validate that we have the required ARN
+        echo "🔍 Loading EBS_ARN from SSM for scheduler update..."
+        local EBS_ARN
+        EBS_ARN=$(aws ssm get-parameter --name "EBS_ARN" --query "Parameter.Value" --output text)
+        
+        # Validate that we have the required ARNs
         if [ -z "$LAMBDA_START_EC2_ARN" ]; then
             echo "❌ ERROR: Failed to load LAMBDA_START_EC2_ARN from SSM"
             echo "🔍 Debug: This means the SSM parameter LAMBDA_START_EC2_ARN was not loaded properly"
             return 1
         fi
         
+        if [ -z "$EBS_ARN" ]; then
+            echo "❌ ERROR: Failed to load EBS_ARN from SSM"
+            echo "🔍 Debug: This means the SSM parameter EBS_ARN was not loaded properly"
+            return 1
+        fi
+        
         echo "🔍 Debug: LAMBDA_START_EC2_ARN = '${LAMBDA_START_EC2_ARN:0:50}...'"
+        echo "🔍 Debug: EBS_ARN = '${EBS_ARN:0:50}...'"
         echo "🔍 Debug: FAST_CRON = '$FAST_CRON'"
         
-        if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$FAST_CRON" --flexible-time-window "OFF" --target "$LAMBDA_START_EC2_ARN" 2>&1; then
+        if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$FAST_CRON" --flexible-time-window Mode=OFF --target '{"Arn":"'"$LAMBDA_START_EC2_ARN"'","RoleArn":"'"$EBS_ARN"'"}' 2>&1; then
             echo "✅ Updated EventBridge Scheduler to fast cron: $FAST_CRON"
         else
             echo "❌ Failed to update EventBridge Scheduler to fast cron"
@@ -74,7 +85,7 @@ adjust_window_if_needed() {
             
             # Try alternative approach - maybe we need to specify the group
             echo "🔍 Debug: Trying with default group..."
-            if aws scheduler update-schedule --name "lol-data-pipeline" --group-name "default" --schedule-expression "$FAST_CRON" --flexible-time-window "OFF" --target "$LAMBDA_START_EC2_ARN" 2>&1; then
+            if aws scheduler update-schedule --name "lol-data-pipeline" --group-name "default" --schedule-expression "$FAST_CRON" --flexible-time-window Mode=OFF --target '{"Arn":"'"$LAMBDA_START_EC2_ARN"'","RoleArn":"'"$EBS_ARN"'"}' 2>&1; then
                 echo "✅ Updated EventBridge Scheduler to fast cron (with group): $FAST_CRON"
             else
                 echo "❌ Failed with group specification too"
