@@ -116,8 +116,7 @@ load_environment_vars() {
     export API_KEY_EXPIRATION=$(aws ssm get-parameter --name "API_KEY_EXPIRATION" --with-decryption --query "Parameter.Value" --output text) 
     echo "🔍 Loading BACKFILL..."
     export BACKFILL=$(aws ssm get-parameter --name "BACKFILL" --query "Parameter.Value" --output text)
-    echo "🔍 Loading LAMBDA_START_EC2_ARN..."
-    export LAMBDA_START_EC2_ARN=$(aws ssm get-parameter --name "LAMBDA_START_EC2_ARN" --query "Parameter.Value" --output text)
+
 
     echo "🔍 AWS_ACCOUNT_ID: ${AWS_ACCOUNT_ID:0:10}..." # Show first 10 chars
     if [ -z "$AWS_ACCOUNT_ID" ]; then
@@ -382,17 +381,20 @@ EOF
         echo "🔍 Debug: Getting current schedule details..."
         aws scheduler get-schedule --name "lol-data-pipeline" 2>&1 | head -20
         
-        # Try to update the schedule with full error output
-        echo "🔍 Debug: Running update-schedule command..."
-        echo "🔍 Debug: LAMBDA_START_EC2_ARN = '$LAMBDA_START_EC2_ARN'"
-        echo "🔍 Debug: SLOW_CRON = '$SLOW_CRON'"
+        # Load LAMBDA_START_EC2_ARN from SSM when we actually need it
+        echo "🔍 Loading LAMBDA_START_EC2_ARN from SSM for scheduler update..."
+        local LAMBDA_START_EC2_ARN
+        LAMBDA_START_EC2_ARN=$(aws ssm get-parameter --name "LAMBDA_START_EC2_ARN" --query "Parameter.Value" --output text)
         
         # Validate that we have the required ARN
         if [ -z "$LAMBDA_START_EC2_ARN" ]; then
-            echo "❌ ERROR: LAMBDA_START_EC2_ARN is empty or undefined"
+            echo "❌ ERROR: Failed to load LAMBDA_START_EC2_ARN from SSM"
             echo "🔍 Debug: This means the SSM parameter LAMBDA_START_EC2_ARN was not loaded properly"
             return 1
         fi
+        
+        echo "🔍 Debug: LAMBDA_START_EC2_ARN = '${LAMBDA_START_EC2_ARN:0:50}...'"
+        echo "🔍 Debug: SLOW_CRON = '$SLOW_CRON'"
         
         if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$SLOW_CRON" --flexible-time-window "OFF" --target "$LAMBDA_START_EC2_ARN" 2>&1; then
             echo "✅ Updated EventBridge Scheduler to slow cron: $SLOW_CRON"
