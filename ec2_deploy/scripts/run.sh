@@ -396,7 +396,7 @@ EOF
         echo "🔍 Debug: LAMBDA_START_EC2_ARN = '${LAMBDA_START_EC2_ARN:0:50}...'"
         echo "🔍 Debug: SLOW_CRON = '$SLOW_CRON'"
         
-        if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$SLOW_CRON" --flexible-time-window "OFF" --target "$LAMBDA_START_EC2_ARN" 2>&1; then
+        if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$SLOW_CRON" --flexible-time-window Mode=OFF --target "$LAMBDA_START_EC2_ARN" 2>&1; then
             echo "✅ Updated EventBridge Scheduler to slow cron: $SLOW_CRON"
         else
             echo "❌ Failed to update EventBridge Scheduler to slow cron"
