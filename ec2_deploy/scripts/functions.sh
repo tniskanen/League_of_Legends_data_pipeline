@@ -46,10 +46,26 @@ adjust_window_if_needed() {
     # If FORCE_FAST=true, update EventBridge Scheduler to fast cron and continue
     if [ "$force_fast" = "true" ]; then
         echo "🚀 FORCE_FAST=true: Updating EventBridge Scheduler to fast cron..."
-        if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$FAST_CRON" >/dev/null 2>&1; then
+        
+        # First, get the current schedule details to see what we're working with
+        echo "🔍 Debug: Getting current schedule details..."
+        aws scheduler get-schedule --name "lol-data-pipeline" 2>&1 | head -20
+        
+        # Try to update the schedule with full error output
+        echo "🔍 Debug: Running update-schedule command..."
+        if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$FAST_CRON" 2>&1; then
             echo "✅ Updated EventBridge Scheduler to fast cron: $FAST_CRON"
         else
             echo "❌ Failed to update EventBridge Scheduler to fast cron"
+            echo "🔍 Debug: Full error output above should show why it failed"
+            
+            # Try alternative approach - maybe we need to specify the group
+            echo "🔍 Debug: Trying with default group..."
+            if aws scheduler update-schedule --name "lol-data-pipeline" --group-name "default" --schedule-expression "$FAST_CRON" 2>&1; then
+                echo "✅ Updated EventBridge Scheduler to fast cron (with group): $FAST_CRON"
+            else
+                echo "❌ Failed with group specification too"
+            fi
         fi
     fi
     
