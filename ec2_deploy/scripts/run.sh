@@ -369,7 +369,7 @@ EOF
     if [ "$slowdown" = "true" ]; then
         echo "🔄 SLOWDOWN=true: Updating EventBridge to slow cron..."
         local SLOW_CRON="cron(0 10 */2 * ? *)"
-        if aws events put-rule --name "lol-data-pipeline-schedule" --schedule-expression "$SLOW_CRON" >/dev/null 2>&1; then
+        if aws events put-rule --name "lol-data-pipeline" --schedule-expression "$SLOW_CRON" >/dev/null 2>&1; then
             echo "✅ Updated EventBridge to slow cron: $SLOW_CRON"
         else
             echo "❌ Failed to update EventBridge to slow cron"
