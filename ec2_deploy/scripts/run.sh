@@ -413,6 +413,62 @@ EOF
             echo "🔄 Processing container exit logic..."
             handle_exit_logic "$EXIT_CODE"
             
+            # Send logs to CloudWatch before exiting
+            if [ "${SEND_LOGS_TO_CLOUDWATCH:-false}" = "true" ]; then
+                # Get instance ID for log stream naming with IMDSv2 support
+                echo "🔍 Getting instance ID from metadata service..."
+                local token
+                
+                # Get IMDSv2 token first
+                token=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
+                    -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" \
+                    --connect-timeout 5 --max-time 10 2>/dev/null)
+                
+                if [ -n "$token" ]; then
+                    # Use token to get instance ID
+                    INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $token" \
+                        http://169.254.169.254/latest/meta-data/instance-id \
+                        --connect-timeout 5 --max-time 10 2>/dev/null)
+                else
+                    # Fallback to IMDSv1 (may not work on newer instances)
+                    INSTANCE_ID=$(curl -s --connect-timeout 5 --max-time 10 \
+                        http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null)
+                fi
+                
+                # Validate instance ID (should be i-xxxxxxxxx format)
+                if [[ "$INSTANCE_ID" =~ ^i-[a-f0-9]+$ ]]; then
+                    echo "✅ Instance ID retrieved: $INSTANCE_ID"
+                else
+                    echo "⚠️ Failed to get valid instance ID from metadata, trying AWS CLI..."
+                    
+                    # Try to get instance ID from AWS CLI
+                    INSTANCE_ID=$(aws ec2 describe-instances \
+                        --filters "Name=instance-state-name,Values=running" \
+                        --query 'Reservations[0].Instances[0].InstanceId' \
+                        --output text 2>/dev/null)
+                    
+                    # Validate the AWS CLI result
+                    if [[ "$INSTANCE_ID" =~ ^i-[a-f0-9]+$ ]]; then
+                        echo "✅ Instance ID retrieved via AWS CLI: $INSTANCE_ID"
+                    else
+                        echo "⚠️ AWS CLI also failed, using hardcoded value"
+                        INSTANCE_ID="i-05b2706eb5c40af2d"  # Hardcoded based on your instance
+                    fi
+                fi
+                
+                echo "📤 Attempting to send immediate failure logs to CloudWatch..."
+                echo "🔍 Debug: CLOUDWATCH_LOG_GROUP = '${CLOUDWATCH_LOG_GROUP}'"
+                echo "🔍 Debug: SEND_LOGS_TO_CLOUDWATCH = '${SEND_LOGS_TO_CLOUDWATCH}'"
+                if send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"; then
+                    echo "✅ CloudWatch logging completed successfully before exit"
+                else
+                    echo "⚠️ CloudWatch logging failed, but continuing with exit"
+                fi
+            fi
+            
+            # Clean up lock file before exiting
+            rm -f "$LOCK_FILE"
+            
             # Exit with the container's exit code instead of calling handle_error
             echo "🛑 Container failed immediately, exiting with code $EXIT_CODE"
             exit "$EXIT_CODE"
