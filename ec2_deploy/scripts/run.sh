@@ -384,6 +384,16 @@ EOF
         
         # Try to update the schedule with full error output
         echo "🔍 Debug: Running update-schedule command..."
+        echo "🔍 Debug: LAMBDA_START_EC2_ARN = '$LAMBDA_START_EC2_ARN'"
+        echo "🔍 Debug: SLOW_CRON = '$SLOW_CRON'"
+        
+        # Validate that we have the required ARN
+        if [ -z "$LAMBDA_START_EC2_ARN" ]; then
+            echo "❌ ERROR: LAMBDA_START_EC2_ARN is empty or undefined"
+            echo "🔍 Debug: This means the SSM parameter LAMBDA_START_EC2_ARN was not loaded properly"
+            return 1
+        fi
+        
         if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$SLOW_CRON" --flexible-time-window "OFF" --target "$LAMBDA_START_EC2_ARN" 2>&1; then
             echo "✅ Updated EventBridge Scheduler to slow cron: $SLOW_CRON"
         else

@@ -53,6 +53,16 @@ adjust_window_if_needed() {
         
         # Try to update the schedule with full error output
         echo "🔍 Debug: Running update-schedule command..."
+        echo "🔍 Debug: LAMBDA_START_EC2_ARN = '$LAMBDA_START_EC2_ARN'"
+        echo "🔍 Debug: FAST_CRON = '$FAST_CRON'"
+        
+        # Validate that we have the required ARN
+        if [ -z "$LAMBDA_START_EC2_ARN" ]; then
+            echo "❌ ERROR: LAMBDA_START_EC2_ARN is empty or undefined"
+            echo "🔍 Debug: This means the SSM parameter LAMBDA_START_EC2_ARN was not loaded properly"
+            return 1
+        fi
+        
         if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$FAST_CRON" --flexible-time-window "OFF" --target "$LAMBDA_START_EC2_ARN" 2>&1; then
             echo "✅ Updated EventBridge Scheduler to fast cron: $FAST_CRON"
         else
