@@ -168,7 +168,7 @@ handle_exit_logic() {
         # Apply current start and end epoch to backfill state
         if [ -n "$start_epoch" ] && [ -n "$end_epoch" ]; then
             echo "🔄 Applying current window ($start_epoch to $end_epoch) to backfill state..."
-            update_window_json "$start_epoch" "$end_epoch" "s3://lol-match-jsons/production/state/next_window.json"
+            update_window_json "$start_epoch" "$end_epoch" "$BACKFILL_STATE_JSON_PATH"
             echo "✅ Backfill window updated: $start_epoch to $end_epoch"
         else
             echo "⚠️ Warning: start_epoch or end_epoch not available for backfill state update"
