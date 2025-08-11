@@ -369,10 +369,17 @@ EOF
     if [ "$slowdown" = "true" ]; then
         echo "🔄 SLOWDOWN=true: Updating EventBridge to slow cron..."
         local SLOW_CRON="cron(0 10 */2 * ? *)"
-        if aws events put-rule --name "lol-data-pipeline" --schedule-expression "$SLOW_CRON" >/dev/null 2>&1; then
+        
+        # Debug: List existing EventBridge rules to see what's available
+        echo "🔍 Debug: Listing existing EventBridge rules..."
+        aws events list-rules --name-prefix "lol" 2>&1 | head -10
+        
+        echo "🔍 Debug: Attempting to update rule 'lol-data-pipeline' to slow cron: $SLOW_CRON"
+        if aws events put-rule --name "lol-data-pipeline" --schedule-expression "$SLOW_CRON" 2>&1; then
             echo "✅ Updated EventBridge to slow cron: $SLOW_CRON"
         else
             echo "❌ Failed to update EventBridge to slow cron"
+            echo "🔍 Debug: This might mean the rule name 'lol-data-pipeline' doesn't exist"
         fi
         
         # Reset SLOWDOWN to false
