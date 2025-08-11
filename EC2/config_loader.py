@@ -1,6 +1,11 @@
 import os
+import sys
 
 def load_config():
+    # TEST: Force exit code 1 to test backfill exit logic
+    # Remove this line after testing
+    sys.exit(1)
+    
     return {
         "MAX_PLAYER_COUNT": int(os.environ.get("PLAYER_LIMIT", 100000)),
         "start_epoch": os.environ.get("start_epoch"),
