@@ -43,13 +43,13 @@ adjust_window_if_needed() {
         force_fast="false"
     fi
     
-    # If FORCE_FAST=true, update EventBridge to fast cron and continue
+    # If FORCE_FAST=true, update EventBridge Scheduler to fast cron and continue
     if [ "$force_fast" = "true" ]; then
-        echo "🚀 FORCE_FAST=true: Updating EventBridge to fast cron..."
-        if aws events put-rule --name "lol-data-pipeline" --schedule-expression "$FAST_CRON" >/dev/null 2>&1; then
-            echo "✅ Updated EventBridge to fast cron: $FAST_CRON"
+        echo "🚀 FORCE_FAST=true: Updating EventBridge Scheduler to fast cron..."
+        if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$FAST_CRON" >/dev/null 2>&1; then
+            echo "✅ Updated EventBridge Scheduler to fast cron: $FAST_CRON"
         else
-            echo "❌ Failed to update EventBridge to fast cron"
+            echo "❌ Failed to update EventBridge Scheduler to fast cron"
         fi
     fi
     

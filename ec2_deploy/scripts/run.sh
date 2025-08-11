@@ -365,21 +365,21 @@ EOF
         slowdown="false"
     fi
     
-    # If SLOWDOWN=true, update EventBridge to slow cron and reset SLOWDOWN
+    # If SLOWDOWN=true, update EventBridge Scheduler to slow cron and reset SLOWDOWN
     if [ "$slowdown" = "true" ]; then
-        echo "🔄 SLOWDOWN=true: Updating EventBridge to slow cron..."
+        echo "🔄 SLOWDOWN=true: Updating EventBridge Scheduler to slow cron..."
         local SLOW_CRON="cron(0 10 */2 * ? *)"
         
-        # Debug: List existing EventBridge rules to see what's available
-        echo "🔍 Debug: Listing existing EventBridge rules..."
-        aws events list-rules --name-prefix "lol" 2>&1 | head -10
+        # Debug: List existing EventBridge Schedules to see what's available
+        echo "🔍 Debug: Listing existing EventBridge Schedules..."
+        aws scheduler list-schedules --name-prefix "lol" 2>&1 | head -10
         
-        echo "🔍 Debug: Attempting to update rule 'lol-data-pipeline' to slow cron: $SLOW_CRON"
-        if aws events put-rule --name "lol-data-pipeline" --schedule-expression "$SLOW_CRON" 2>&1; then
-            echo "✅ Updated EventBridge to slow cron: $SLOW_CRON"
+        echo "🔍 Debug: Attempting to update schedule 'lol-data-pipeline' to slow cron: $SLOW_CRON"
+        if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$SLOW_CRON" 2>&1; then
+            echo "✅ Updated EventBridge Scheduler to slow cron: $SLOW_CRON"
         else
-            echo "❌ Failed to update EventBridge to slow cron"
-            echo "🔍 Debug: This might mean the rule name 'lol-data-pipeline' doesn't exist"
+            echo "❌ Failed to update EventBridge Scheduler to slow cron"
+            echo "🔍 Debug: This might mean the schedule name 'lol-data-pipeline' doesn't exist"
         fi
         
         # Reset SLOWDOWN to false
@@ -476,8 +476,12 @@ EOF
             # Clean up lock file before exiting
             rm -f "$LOCK_FILE"
             
-            # Exit with the container's exit code instead of calling handle_error
-            echo "🛑 Container failed immediately, exiting with code $EXIT_CODE"
+            # Shutdown EC2 instance before exiting
+            echo "🛑 Container failed immediately, shutting down EC2 instance..."
+            shutdown_ec2_instance 10  # 10 second delay to allow logs to be written
+            
+            # Exit with the container's exit code
+            echo "🛑 Exiting script with code $EXIT_CODE"
             exit "$EXIT_CODE"
         fi
         
