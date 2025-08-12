@@ -371,50 +371,30 @@ EOF
         echo "🔄 SLOWDOWN=true: Updating EventBridge Scheduler to slow cron..."
         local SLOW_CRON="cron(0 10 */2 * ? *)"
         
-        # Debug: List existing EventBridge Schedules to see what's available
-        echo "🔍 Debug: Listing existing EventBridge Schedules..."
-        aws scheduler list-schedules --name-prefix "lol" 2>&1 | head -10
-        
-        echo "🔍 Debug: Attempting to update schedule 'lol-data-pipeline' to slow cron: $SLOW_CRON"
-        
-        # First, get the current schedule details to see what we're working with
-        echo "🔍 Debug: Getting current schedule details..."
-        aws scheduler get-schedule --name "lol-data-pipeline" 2>&1 | head -20
-        
-        # Load LAMBDA_START_EC2_ARN and EBS_ARN from SSM when we actually need it
-        echo "🔍 Loading LAMBDA_START_EC2_ARN from SSM for scheduler update..."
+        # Load LAMBDA_START_EC2_ARN and EBS_ARN from SSM
         local LAMBDA_START_EC2_ARN
         LAMBDA_START_EC2_ARN=$(aws ssm get-parameter --name "LAMBDA_START_EC2_ARN" --query "Parameter.Value" --output text)
         
-        echo "🔍 Loading EBS_ARN from SSM for scheduler update..."
         local EBS_ARN
         EBS_ARN=$(aws ssm get-parameter --name "EBS_ARN" --query "Parameter.Value" --output text)
         
         # Validate that we have the required ARNs
         if [ -z "$LAMBDA_START_EC2_ARN" ]; then
             echo "❌ ERROR: Failed to load LAMBDA_START_EC2_ARN from SSM"
-            echo "🔍 Debug: This means the SSM parameter LAMBDA_START_EC2_ARN was not loaded properly"
             return 1
         fi
         
         if [ -z "$EBS_ARN" ]; then
             echo "❌ ERROR: Failed to load EBS_ARN from SSM"
-            echo "🔍 Debug: This means the SSM parameter EBS_ARN was not loaded properly"
             return 1
         fi
-        
-        echo "🔍 Debug: LAMBDA_START_EC2_ARN = '${LAMBDA_START_EC2_ARN:0:50}...'"
-        echo "🔍 Debug: EBS_ARN = '${EBS_ARN:0:50}...'"
-        echo "🔍 Debug: SLOW_CRON = '$SLOW_CRON'"
         
         if aws scheduler update-schedule --name "lol-data-pipeline" --schedule-expression "$SLOW_CRON" --flexible-time-window Mode=OFF --target '{"Arn":"'"$LAMBDA_START_EC2_ARN"'","RoleArn":"'"$EBS_ARN"'"}' 2>&1; then
             echo "✅ Updated EventBridge Scheduler to slow cron: $SLOW_CRON"
         else
             echo "❌ Failed to update EventBridge Scheduler to slow cron"
-            echo "🔍 Debug: Full error output above should show why it failed"
             
             # Try alternative approach - maybe we need to specify the group
-            echo "🔍 Debug: Trying with default group..."
             if aws scheduler update-schedule --name "lol-data-pipeline" --group-name "default" --schedule-expression "$SLOW_CRON" --flexible-time-window Mode=OFF --target '{"Arn":"'"$LAMBDA_START_EC2_ARN"'","RoleArn":"'"$EBS_ARN"'"}' 2>&1; then
                 echo "✅ Updated EventBridge Scheduler to slow cron (with group): $SLOW_CRON"
             else
