@@ -191,6 +191,14 @@ load_environment_vars() {
     if ! adjust_window_if_needed "$start_epoch" "$end_epoch"; then
         echo "🛑 Window adjustment triggered shutdown - sending logs before exit"
         
+        # CRITICAL: Set BACKFILL=true before shutting down to preserve the window
+        echo "🔄 Setting BACKFILL=true to preserve the updated window for retry..."
+        if update_ssm_parameter "BACKFILL" "true"; then
+            echo "✅ BACKFILL set to true - window will be retried"
+        else
+            echo "⚠️ Failed to set BACKFILL=true - window may be lost"
+        fi
+        
         # Send logs to CloudWatch before shutting down
         if [ "${SEND_LOGS_TO_CLOUDWATCH:-false}" = "true" ]; then
             # Get instance ID for log stream naming with IMDSv2 support
@@ -435,6 +443,14 @@ EOF
             echo "🔍 Container exit code:"
             EXIT_CODE=$($DOCKER_CMD inspect "${CONTAINER_NAME}" --format='{{.State.ExitCode}}')
             echo "Container exit code: $EXIT_CODE"
+            
+            # CRITICAL: Set BACKFILL=true before shutting down to preserve the window
+            echo "🔄 Container failed immediately - setting BACKFILL=true to preserve window..."
+            if update_ssm_parameter "BACKFILL" "true"; then
+                echo "✅ BACKFILL set to true - window will be retried"
+            else
+                echo "⚠️ Failed to set BACKFILL=true - window may be lost"
+            fi
             
             # Handle exit logic before shutting down
             echo "🔄 Processing container exit logic..."

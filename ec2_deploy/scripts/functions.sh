@@ -57,11 +57,15 @@ adjust_window_if_needed() {
         # Validate that we have the required ARNs
         if [ -z "$LAMBDA_START_EC2_ARN" ]; then
             echo "❌ ERROR: Failed to load LAMBDA_START_EC2_ARN from SSM"
+            echo "🔄 Setting BACKFILL=true to preserve current window for retry..."
+            update_ssm_parameter "BACKFILL" "true"
             return 1
         fi
         
         if [ -z "$EBS_ARN" ]; then
             echo "❌ ERROR: Failed to load EBS_ARN from SSM"
+            echo "🔄 Setting BACKFILL=true to preserve current window for retry..."
+            update_ssm_parameter "BACKFILL" "true"
             return 1
         fi
         
