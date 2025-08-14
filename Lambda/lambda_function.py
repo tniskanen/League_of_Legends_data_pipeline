@@ -156,7 +156,7 @@ def lambda_handler(event, context):
             logger.info(f"   Batch size: {batch_size}")
             logger.info(f"   Total records: {sum(len(data) for data in tables.values())}")
             
-            conn.begin()  # Start transaction
+            conn.start_transaction()  # Start transaction
             
             # Process ALL tables and ALL batches
             for table_name, table_data in tables.items():

@@ -250,7 +250,7 @@ def check_files(bucket, filepath):
     except Exception as e:
         print(f"✗ Error checking files at {filepath}: {str(e)}")
         return []
-
+             
 ###SAVING JSON LOCALLY TO TEST LAMBDA ETL
 def save_json(data):
     file_path = os.path.join(os.getcwd(), f'match_json_objects_{int(time.time())}.json') 
