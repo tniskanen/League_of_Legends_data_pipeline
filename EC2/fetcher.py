@@ -12,7 +12,6 @@ try:
     print("✅ All imports successful")
 except ImportError as e:
     print(f"❌ Import error: {e}")
-    print("Available modules in current directory:")
     sys.exit(1)
 except Exception as e:
     print(f"❌ Unexpected import error: {e}")
