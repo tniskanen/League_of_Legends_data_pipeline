@@ -1,4 +1,4 @@
-from Utils.S3 import alter_s3_file
+from Utils.S3 import alter_s3_file, check_files
 
 new_window = {
     'start_epoch': 1752667200,
