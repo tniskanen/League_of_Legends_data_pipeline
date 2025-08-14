@@ -1,4 +1,6 @@
 import mysql.connector
+import datetime
+import json
 
 def get_existing_columns(cursor, table_name):
     cursor.execute(f"DESCRIBE {table_name}")
@@ -40,38 +42,6 @@ def insert_data_to_mysql(cursor, table_name, rows):
     cursor.executemany(sql, aligned_rows)
     print(f"Inserted {len(aligned_rows)} rows into {table_name}")
 
-
-# Function to generate and execute CREATE TABLE statements
-def create_tables_from_dict(tables_dict, cursor, conn):
-
-    # Iterate through each table in the dictionary
-    for table_name, rows in tables_dict.items():
-        if rows:
-            # Get the first row in the list to infer column names and types
-            first_row = rows[0]
-            
-            column_definitions = []
-            
-            # For each key-value pair in the first row dictionary
-            for column, value in first_row.items():
-                # Infer the datatype of each column based on the value in the first row
-                datatype = infer_column_data_type(value)
-
-                # Add the column definition to the list
-                column_definitions.append(f"{column} {datatype}")
-
-            # Create the CREATE TABLE query
-            create_table_query = f"CREATE TABLE IF NOT EXISTS {table_name} ({', '.join(column_definitions)});"
-
-            # Execute the query to create the table
-            try:
-                cursor.execute(create_table_query)
-                print(f"Table {table_name} created successfully.")
-                conn.commit()
-            except mysql.connector.Error as err:
-                print(f"Error creating table {table_name}: {err}")
-                conn.close()
-
 # Helper function to infer the datatype of a column based on the value
 def infer_column_data_type(value):
     if isinstance(value, int):
@@ -93,3 +63,39 @@ def search_rows(rows, key):
             return dictionary[key]
 
     return None
+
+def ensure_healthy_connection(conn, cursor):
+    try:
+        conn.ping(reconnect=False)
+        return conn, cursor
+    except:
+        logger.warning("⚠️ Connection unhealthy, reconnecting...")
+        conn.reconnect()
+        cursor = conn.cursor()
+        return conn, cursor
+
+def format_error_response(error, error_type, status_code, file_key=None, bucket=None, request_id=None, **kwargs):
+    """Format consistent error response for Lambda functions"""
+    error_response = {
+        'error': str(error),
+        'error_type': error_type,
+        'status_code': status_code,
+        'timestamp': datetime.utcnow().isoformat()
+    }
+    
+    # Add file context if provided
+    if file_key:
+        error_response['file_key'] = file_key
+    if bucket:
+        error_response['bucket'] = bucket
+    if request_id:
+        error_response['request_id'] = request_id
+    
+    # Add any additional context
+    if kwargs:
+        error_response.update(kwargs)
+    
+    return {
+        'statusCode': status_code,
+        'body': json.dumps(error_response)
+    }
