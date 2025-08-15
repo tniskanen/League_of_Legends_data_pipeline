@@ -99,8 +99,8 @@ def run_processor(config, matchlist):
                 print(f"🛑 Processing stopped due to API key expiration. Processed {i}/{len(uniqueMatches)} matches.")
                 break
             
-            # Progress indicator every 100 matches
-            if i % 100 == 0:
+            # Progress indicator every 1000 matches
+            if i % 1000 == 0:
                 print(f"  Progress: {i}/{len(uniqueMatches)} matches processed")
                 
             temp_data = match(match_id, config['API_KEY'])

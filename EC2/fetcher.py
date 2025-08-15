@@ -66,7 +66,6 @@ def run_fetcher(config):
                         json_response = LowElo(tier, division, page, config['API_KEY'])
                         if json_response:
                             low_elo_players.extend(json_response)
-                            print(f"    Page {page}: Added {len(json_response)} players")
                             page += 1
                         else:
                             print(f"    Finished {tier} {division}")
