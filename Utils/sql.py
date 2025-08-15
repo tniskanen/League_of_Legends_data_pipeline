@@ -80,7 +80,7 @@ def format_error_response(error, error_type, status_code, file_key=None, bucket=
         'error': str(error),
         'error_type': error_type,
         'status_code': status_code,
-        'timestamp': datetime.utcnow().isoformat()
+        'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat()
     }
     
     # Add file context if provided
