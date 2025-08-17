@@ -79,9 +79,16 @@ def lambda_handler(event, context):
         data = json.loads(file_content.decode('utf-8'))
         logger.info(f"✅ S3 file loaded successfully")
         
+        # Debug: Check data structure
+        print(f"Data loaded, type: {type(data)}")
+        print(f"Data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
+        
         # Determine data type and table based on file path
+        print("About to process data...")
         if "player-maps" in fileKey:   
+            print("Processing player-maps data")
             table = "player_ranks_data"
+            print(f"Table set to: {table}")
             logger.info(f"📊 Processing ranked player data for table: {table}")
             
             # Direct player-maps file (from processor.py upload)
@@ -90,14 +97,18 @@ def lambda_handler(event, context):
                 for puuid, stats in data.items()
             ]
             all_data = flattened_players
+            print(f"Created {len(all_data)} flattened players")
             logger.info(f"📋 Processing {len(all_data)} ranked players")
 
         else:
-            # Process all matches into a single data list
+            print("Processing matches data")
             table = "player_data"
+            print(f"Table set to: {table}")
+            # Process all matches into a single data list
             logger.info(f"📊 Processing match data for table: {table}")
             
             all_data = []
+            print(f"Found {len(data['matches'])} matches to process")
             logger.info(f"📋 Processing {len(data['matches'])} matches...")
             
             for game in data['matches']:
@@ -136,8 +147,10 @@ def lambda_handler(event, context):
                     
                     all_data.append(cleaned_player)
         
+        print(f"Data processing complete: {len(all_data)} total records for table '{table}'")
         logger.info(f"📊 Data processing complete: {len(all_data)} total records for table '{table}'")
         
+        print("About to connect to database...")
         logger.info("🔌 Attempting to connect to MySQL database...")
         try:
             conn = mysql.connector.connect(
@@ -147,15 +160,19 @@ def lambda_handler(event, context):
                 database=DB_NAME,
                 auth_plugin='mysql_native_password'  # Force native password
             )
+            print("Database connection successful")
             logger.info("✅ Successfully connected to MySQL database")
         except mysql.connector.Error as conn_err:
+            print(f"Database connection failed: {conn_err}")
             logger.error(f"❌ MySQL connection failed: {conn_err}")
             raise
 
         cursor = conn.cursor() 
+        print("Cursor created successfully")
 
         # Define the batch size
         batch_size = 200
+        print(f"Batch size set to: {batch_size}")
         transaction_state = {
             'start_time': time.time(),
             'batches_processed': 0,
@@ -166,6 +183,7 @@ def lambda_handler(event, context):
     
         # Process data in batches
         try:
+            print("About to start transaction...")
             # Log initial transaction state
             logger.info("🚀 Starting Transaction:")
             logger.info(f"   Table: {table}")
@@ -174,6 +192,7 @@ def lambda_handler(event, context):
             logger.info(f"   Total batches: {(len(all_data) + batch_size - 1) // batch_size}")
             
             conn.start_transaction()  # Start transaction
+            print("Transaction started successfully")
             
             # Process ALL batches
             total_batches = (len(all_data) + batch_size - 1) // batch_size
