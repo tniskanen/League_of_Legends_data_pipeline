@@ -45,7 +45,7 @@ def flatten_perks(perks):
     out['statPerks'] = perks['statPerks']
     
     
-    print(flatten_json(out))
+    return (flatten_json(out))
 
 def split_json(flat_dict):
     legendaryItems = {}
