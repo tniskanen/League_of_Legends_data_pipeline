@@ -111,8 +111,10 @@ def lambda_handler(event, context):
             print(f"Found {len(data['matches'])} matches to process")
             logger.info(f"📋 Processing {len(data['matches'])} matches...")
             
-            for game in data['matches']:
-                for player in game['info']['participants']:
+            for game_idx, game in enumerate(data['matches']):
+                print(f"Processing game {game_idx + 1}/{len(data['matches'])}")
+                for player_idx, player in enumerate(game['info']['participants']):
+                    print(f"  Processing player {player_idx + 1}/{len(game['info']['participants'])} in game {game_idx + 1}")
                     
                     # Create a copy to avoid modifying the original
                     player_copy = player.copy()
@@ -146,6 +148,10 @@ def lambda_handler(event, context):
                         cleaned_player['source'] = game['source']
                     
                     all_data.append(cleaned_player)
+                
+                # Progress update every 10 games
+                if (game_idx + 1) % 10 == 0:
+                    print(f"Completed {game_idx + 1}/{len(data['matches'])} games, processed {len(all_data)} players so far")
         
         print(f"Data processing complete: {len(all_data)} total records for table '{table}'")
         logger.info(f"📊 Data processing complete: {len(all_data)} total records for table '{table}'")
