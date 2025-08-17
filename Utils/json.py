@@ -1,7 +1,6 @@
 from collections import deque
 
 def flatten_json(nested_json):
-
     """Flatten the JSON into a single level (row)."""
     out = {}  # This will hold the flattened result
     queue = deque([((), nested_json)])  # Initialize a queue with the root of the JSON structure
@@ -26,6 +25,27 @@ def flatten_json(nested_json):
             out["_".join(path)] = current  # Join the path into a string (using underscores) and store the value
 
     return out  # Return the flattened dictionary
+
+def flatten_perks(perks):
+
+    out = {}
+
+    Primary  = {}
+    for i, perk in enumerate(perks['styles'][0]['selections']):
+        Primary[f"slot_{i+1}"] = perk
+    Primary['style'] = perks['styles'][0]['style']
+    
+    Secondary = {}
+    for i, perk in enumerate(perks['styles'][1]['selections']):
+        Secondary[f"slot_{i+1}"] = perk
+    Secondary['style'] = perks['styles'][1]['style']
+
+    out['Primary'] = Primary
+    out['Secondary'] = Secondary
+    out['statPerks'] = perks['statPerks']
+    
+    
+    print(flatten_json(out))
 
 def split_json(flat_dict):
     legendaryItems = {}

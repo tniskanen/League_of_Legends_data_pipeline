@@ -5,7 +5,7 @@ import psutil
 try:
     print("Testing imports...")
     from Utils.api import match, handle_api_response
-    from Utils.S3 import send_json, pull_s3_object, upload_to_s3, alter_s3_file
+    from Utils.S3 import send_match_json, pull_s3_object, upload_to_s3, alter_s3_file
     from Utils.logger import get_logger
     logger = get_logger(__name__)
     print("✅ All imports successful")
@@ -62,6 +62,16 @@ def run_processor(config, matchlist):
     
     uniqueMatches = matchlist_data['matchlist']
     player_rank_map = matchlist_data['ranked_map']
+
+    #uploading matchlist to s3
+    try:
+        pm_key = f'player-maps/player-map_{config["start_epoch"]}_{config["end_epoch"]}_.json'
+        upload_to_s3(config['BUCKET'], pm_key, player_rank_map)
+        print(f"✅ player-map uploaded to: {pm_key}")
+    except Exception as e:
+        print(f"❌ CRITICAL: Failed to upload player-map: {e}")
+        print(f"🛑 Cannot proceed without player-map - exiting with error")
+        sys.exit(1)  # Critical failure - exit code 1
 
     print(f"Starting data processing at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
@@ -129,7 +139,7 @@ def run_processor(config, matchlist):
             # Upload every 500 successful matches
             if successful_matches % 500 == 0:
                 print(f"Uploading batch of {successful_matches} matches to S3 (total processed: {total})")
-                thread = send_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'])  # Explicit copy
+                thread = send_match_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'])  # Explicit copy
                 if thread:
                     active_threads.append(thread)
                 matches = []
@@ -159,7 +169,7 @@ def run_processor(config, matchlist):
     # Upload remaining matches
     if matches:
         print(f"Uploading final batch of {len(matches)} matches")
-        thread = send_json(data=matches, bucket=config['BUCKET'], source=config['source'])
+        thread = send_match_json(data=matches, bucket=config['BUCKET'], source=config['source'])
         if thread:
             active_threads.append(thread)
 

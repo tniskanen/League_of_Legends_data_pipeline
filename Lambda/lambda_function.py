@@ -8,7 +8,7 @@ try:
     print("Testing imports...")
     import mysql.connector
     from Utils.sql import insert_data_to_mysql, ensure_healthy_connection, format_error_response
-    from Utils.json import flatten_json, split_json, add_join_keys
+    from Utils.json import flatten_json, flatten_perks
     from Utils.S3 import get_parameter_from_ssm
     from Utils.logger import get_logger
     print("✅ All imports successful")
@@ -78,45 +78,61 @@ def lambda_handler(event, context):
         file_content = s3_object['Body'].read()
         data = json.loads(file_content.decode('utf-8'))
         logger.info(f"✅ S3 file loaded successfully")
-
-        tables = {
-            'BasicStats': [],
-            'challengeStats': [],
-            'legendaryItem': [],
-            'perkMissionStats': []
-        }
-
-        logger.info(f"📋 Processing {len(data['matches'])} matches...")
-        for game in data['matches']:
-            
-            for player in game['info']['participants']:
-
-                temp_player = flatten_json(player)
-
-                temp_player['dataVersion'] = game['metadata']['dataVersion']
-                temp_player['matchId'] = game['metadata']['matchId']
-
-                temp_player['gameCreation'] = game['info']['gameCreation']
-                temp_player['gameDuration'] = game['info']['gameDuration']
-                temp_player['gameVersion'] = game['info']['gameVersion']
-                temp_player['mapId'] = game['info']['mapId']
-                
-                # Add source from game data
-                if 'source' in game:
-                    temp_player['source'] = game['source']
-                
-                #sorting data for seperate tables, create join keys, add temp dictionaries to data lists
-                dicts = add_join_keys(split_json(temp_player))
-                tables['BasicStats'].append(dicts[0])
-                tables['challengeStats'].append(dicts[1])
-                tables['legendaryItem'].append(dicts[2])
-                tables['perkMissionStats'].append(dicts[3])
         
-        logger.info(f"📊 Data processing complete:")
-        logger.info(f"   BasicStats: {len(tables['BasicStats'])} records")
-        logger.info(f"   challengeStats: {len(tables['challengeStats'])} records")
-        logger.info(f"   legendaryItem: {len(tables['legendaryItem'])} records")
-        logger.info(f"   perkMissionStats: {len(tables['perkMissionStats'])} records")
+        # Determine data type and table based on file path
+        if "player-maps" in fileKey:   
+            table = "player_ranks_data"
+            logger.info(f"📊 Processing ranked player data for table: {table}")
+            
+            # Direct player-maps file (from processor.py upload)
+            flattened_players = [
+                {"puuid": puuid, **stats}
+                for puuid, stats in data.items()
+            ]
+            all_data = flattened_players
+            logger.info(f"📋 Processing {len(all_data)} ranked players")
+
+        else:
+            # Process all matches into a single data list
+            table = "player_data"
+            logger.info(f"📊 Processing match data for table: {table}")
+            
+            all_data = []
+            logger.info(f"📋 Processing {len(data['matches'])} matches...")
+            
+            for game in data['matches']:
+                for player in game['info']['participants']:
+                    
+                    perks = flatten_perks(player['perks'])
+                    del player['perks']
+                    temp_player = flatten_json(player)
+                    temp_player.update(perks)
+
+                    #remove challenges_ and missions_ from keys
+                    for key, value in temp_player.items():
+                        if key.startswith("challenges_"):
+                            new_key = key.replace("challenges_", "", 1)
+                        elif key.startswith("missions_"):
+                            new_key = key.replace("missions_", "", 1)
+                        else:
+                            new_key = key
+                        temp_player[new_key] = value
+
+                    temp_player['dataVersion'] = game['metadata']['dataVersion']
+                    temp_player['matchId'] = game['metadata']['matchId']
+
+                    temp_player['gameCreation'] = game['info']['gameCreation']
+                    temp_player['gameDuration'] = game['info']['gameDuration']
+                    temp_player['gameVersion'] = game['info']['gameVersion']
+                    temp_player['mapId'] = game['info']['mapId']
+                    
+                    # Add source from game data
+                    if 'source' in game:
+                        temp_player['source'] = game['source']
+                    
+                    all_data.append(temp_player)
+        
+        logger.info(f"📊 Data processing complete: {len(all_data)} total records for table '{table}'")
         
         logger.info("🔌 Attempting to connect to MySQL database...")
         try:
@@ -138,74 +154,62 @@ def lambda_handler(event, context):
         batch_size = 200
         transaction_state = {
             'start_time': time.time(),
-            'tables_processed': [],
             'batches_processed': 0,
-            'total_records': 0,
+            'total_records': len(all_data),
             'failed_batches': [],
-            'current_table': None,
             'current_batch': None
-            }
+        }
     
         # Process data in batches
         try:
             # Log initial transaction state
             logger.info("🚀 Starting Transaction:")
-            logger.info(f"   Tables to process: {list(tables.keys())}")
-            for table_name, table_data in tables.items():
-                logger.info(f"   {table_name}: {len(table_data)} records")
+            logger.info(f"   Table: {table}")
+            logger.info(f"   Total records to process: {len(all_data)}")
             logger.info(f"   Batch size: {batch_size}")
-            logger.info(f"   Total records: {sum(len(data) for data in tables.values())}")
+            logger.info(f"   Total batches: {(len(all_data) + batch_size - 1) // batch_size}")
             
             conn.start_transaction()  # Start transaction
             
-            # Process ALL tables and ALL batches
-            for table_name, table_data in tables.items():
-                transaction_state['current_table'] = table_name
-                transaction_state['total_records'] += len(table_data)
+            # Process ALL batches
+            total_batches = (len(all_data) + batch_size - 1) // batch_size
+            current_batch_num = 0
+            
+            for i in range(0, len(all_data), batch_size):
+                current_batch_num += 1
+                batch_data = all_data[i:i + batch_size]
+                batch_start = i
+                batch_end = min(i + batch_size, len(all_data))
+                transaction_state['current_batch'] = f"{batch_start}-{batch_end}"
                 
-                logger.info(f"📋 Processing table: {table_name} ({len(table_data)} records)")
+                logger.info(f"📦 Processing batch {current_batch_num}/{total_batches} ({len(batch_data)} records) for table '{table}'")
                 
-                total_batches = (len(table_data) + batch_size - 1) // batch_size
-                current_batch_num = 0
+                conn, cursor = ensure_healthy_connection(conn, cursor)
                 
-                for i in range(0, len(table_data), batch_size):
-                    current_batch_num += 1
-                    batch_data = table_data[i:i + batch_size]
-                    batch_start = i
-                    batch_end = min(i + batch_size, len(table_data))
-                    transaction_state['current_batch'] = f"{batch_start}-{batch_end}"
-                    
-                    logger.info(f"   📦 Processing batch {current_batch_num}/{total_batches} ({len(batch_data)} records)")
-                    
-                    conn, cursor = ensure_healthy_connection(conn, cursor)
-                    
-                    try:
-                        insert_data_to_mysql(cursor, table_name, batch_data)
-                        transaction_state['batches_processed'] += 1
-                        logger.info(f"   ✅ Batch {current_batch_num}/{total_batches} completed")
-                    except Exception as e:
-                        transaction_state['failed_batches'].append({
-                            'table': table_name,
-                            'batch_start': batch_start,
-                            'batch_end': batch_end,
-                            'error': str(e)
-                        })
-                        logger.error(f"   ❌ Batch {current_batch_num}/{total_batches} failed: {e}")
-                        # Decide: rollback entire transaction or continue with other batches
-                        raise
-                
-                transaction_state['tables_processed'].append(table_name)
-                logger.info(f"✅ Completed table: {table_name}")
+                try:
+                    insert_data_to_mysql(cursor, table, batch_data)  # Single table name
+                    transaction_state['batches_processed'] += 1
+                    logger.info(f"✅ Batch {current_batch_num}/{total_batches} completed for table '{table}'")
+                except Exception as e:
+                    transaction_state['failed_batches'].append({
+                        'batch_start': batch_start,
+                        'batch_end': batch_end,
+                        'error': str(e),
+                        'table': table
+                    })
+                    logger.error(f"❌ Batch {current_batch_num}/{total_batches} failed for table '{table}': {e}")
+                    # Rollback entire transaction on any batch failure
+                    raise
             
             conn.commit()  # Commit everything at once
-            logger.info("✅ All data committed successfully")
+            logger.info(f"✅ All data committed successfully to table '{table}'")
             
             # Log final transaction state
             transaction_state['end_time'] = time.time()
             transaction_state['duration'] = transaction_state['end_time'] - transaction_state['start_time']
             logger.info("📊 Final Transaction State:")
+            logger.info(f"   Table: {table}")
             logger.info(f"   Duration: {transaction_state['duration']:.2f} seconds")
-            logger.info(f"   Tables processed: {len(transaction_state['tables_processed'])}")
             logger.info(f"   Total records: {transaction_state['total_records']}")
             logger.info(f"   Batches processed: {transaction_state['batches_processed']}")
             logger.info(f"   Failed batches: {len(transaction_state['failed_batches'])}")
@@ -217,18 +221,17 @@ def lambda_handler(event, context):
             
         except Exception as e:
             conn.rollback()  # Rollback everything on any error
-            logger.error(f"❌ Transaction rolled back: {e}")
+            logger.error(f"❌ Transaction rolled back for table '{table}': {e}")
             
             # Log transaction state at failure
             transaction_state['end_time'] = time.time()
             transaction_state['duration'] = transaction_state['end_time'] - transaction_state['start_time']
             logger.error("📊 Transaction State at Failure:")
+            logger.error(f"   Table: {table}")
             logger.error(f"   Duration: {transaction_state['duration']:.2f} seconds")
-            logger.error(f"   Tables processed: {len(transaction_state['tables_processed'])}")
             logger.error(f"   Total records: {transaction_state['total_records']}")
             logger.error(f"   Batches processed: {transaction_state['batches_processed']}")
             logger.error(f"   Failed batches: {len(transaction_state['failed_batches'])}")
-            logger.error(f"   Current table: {transaction_state['current_table']}")
             logger.error(f"   Current batch: {transaction_state['current_batch']}")
             
             raise
@@ -255,7 +258,6 @@ def lambda_handler(event, context):
             file_key=fileKey,
             bucket=bucket,
             request_id=context.aws_request_id,
-            table=transaction_state.get('current_table'),
             batch=transaction_state.get('current_batch')
         )
         
@@ -296,10 +298,16 @@ def lambda_handler(event, context):
     logger.info("🎉 Lambda execution completed successfully!")
     logger.info(f"📊 Final Summary:")
     logger.info(f"   File processed: s3://{bucket}/{fileKey}")
+    logger.info(f"   Table: {table}")
     logger.info(f"   Total records processed: {transaction_state.get('total_records', 0)}")
-    logger.info(f"   Tables processed: {len(transaction_state.get('tables_processed', []))}")
     logger.info(f"   Database transaction time: {transaction_state.get('duration', 0):.2f} seconds")
     logger.info(f"   Total execution time: {execution_time:.2f} seconds")
+    
+    # Add data type specific summary
+    if "player-ranks-data" in table:
+        logger.info(f"🏆 Ranked player data successfully uploaded to {table}")
+    else:
+        logger.info(f"🎮 Match data successfully uploaded to {table}")
 
     return {
             'statusCode': 200,

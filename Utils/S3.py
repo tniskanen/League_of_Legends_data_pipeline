@@ -54,7 +54,7 @@ def upload_to_s3(bucket, key, data):
         traceback.print_exc()
         raise
 
-def send_json(data, bucket, custom_date=None, source=None):
+def send_match_json(data, bucket, custom_date=None, source=None):
     """
     Upload JSON to S3 with date-based folder structure
     

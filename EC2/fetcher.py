@@ -112,11 +112,14 @@ def run_fetcher(config):
     # Limit player list to the environment-defined max (e.g., 100 for test, 100000 for prod)
     ranked_players = normalized_high_elo + normalized_low_elo
 
+    timestamp = time.time()
+
     player_rank_map = {
         player['puuid']: {
             'tier': player['tier'],
             'rank': player['rank'],
-            'lp': player['lp']
+            'lp': player['lp'],
+            'time_stamp' : timestamp
         }
         for player in ranked_players if 'puuid' in player
     }

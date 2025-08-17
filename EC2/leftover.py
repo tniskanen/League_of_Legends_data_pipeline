@@ -5,7 +5,7 @@ import psutil
 try:
     print("Testing imports...")
     from Utils.api import match, handle_api_response
-    from Utils.S3 import send_json, pull_s3_object, alter_s3_file, check_files
+    from Utils.S3 import send_match_json, pull_s3_object, alter_s3_file, check_files
     from Utils.logger import get_logger
     logger = get_logger(__name__)
     print("✅ All imports successful")
@@ -111,7 +111,7 @@ def run_leftovers(config):
                 # Upload every 500 successful matches
                 if successful_matches % 500 == 0:
                     print(f"Uploading batch of {successful_matches} matches to S3 (total processed: {total})")
-                    thread = send_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'])  # Explicit copy
+                    thread = send_match_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'])  # Explicit copy
                     if thread:
                         active_threads.append(thread)
                     matches = []
@@ -138,7 +138,7 @@ def run_leftovers(config):
         # Upload remaining matches
         if matches:
             print(f"Uploading final batch of {len(matches)} matches")
-            thread = send_json(data=matches, bucket=config['BUCKET'], source=config['source'])
+            thread = send_match_json(data=matches, bucket=config['BUCKET'], source=config['source'])
             if thread:
                 active_threads.append(thread)
 
