@@ -111,47 +111,62 @@ def lambda_handler(event, context):
             print(f"Found {len(data['matches'])} matches to process")
             logger.info(f"📋 Processing {len(data['matches'])} matches...")
             
-            for game_idx, game in enumerate(data['matches']):
-                print(f"Processing game {game_idx + 1}/{len(data['matches'])}")
-                for player_idx, player in enumerate(game['info']['participants']):
-                    print(f"  Processing player {player_idx + 1}/{len(game['info']['participants'])} in game {game_idx + 1}")
-                    
-                    # Create a copy to avoid modifying the original
-                    player_copy = player.copy()
-                    
-                    perks = flatten_perks(player_copy['perks'])
-                    del player_copy['perks']
-                    temp_player = flatten_json(player_copy)
-                    temp_player.update(perks)
-
-                    #remove challenges_ and missions_ from keys
-                    cleaned_player = {}
-                    for key, value in temp_player.items():
-                        if key.startswith("challenges_"):
-                            new_key = key.replace("challenges_", "", 1)
-                        elif key.startswith("missions_"):
-                            new_key = key.replace("missions_", "", 1)
-                        else:
-                            new_key = key
-                        cleaned_player[new_key] = value
-
-                    cleaned_player['dataVersion'] = game['metadata']['dataVersion']
-                    cleaned_player['matchId'] = game['metadata']['matchId']
-
-                    cleaned_player['gameCreation'] = game['info']['gameCreation']
-                    cleaned_player['gameDuration'] = game['info']['gameDuration']
-                    cleaned_player['gameVersion'] = game['info']['gameVersion']
-                    cleaned_player['mapId'] = game['info']['mapId']
-                    
-                    # Add source from game data
-                    if 'source' in game:
-                        cleaned_player['source'] = game['source']
-                    
-                    all_data.append(cleaned_player)
+            # Process games in batches of 25 to manage memory
+            game_batch_size = 25
+            total_games = len(data['matches'])
+            
+            for batch_start in range(0, total_games, game_batch_size):
+                batch_end = min(batch_start + game_batch_size, total_games)
+                print(f"Processing games {batch_start + 1}-{batch_end} of {total_games}")
                 
-                # Progress update every 10 games
-                if (game_idx + 1) % 10 == 0:
-                    print(f"Completed {game_idx + 1}/{len(data['matches'])} games, processed {len(all_data)} players so far")
+                # Process this batch of games
+                for game_idx in range(batch_start, batch_end):
+                    game = data['matches'][game_idx]
+                    print(f"Processing game {game_idx + 1}/{total_games}")
+                    
+                    for player_idx, player in enumerate(game['info']['participants']):
+                        print(f"  Processing player {player_idx + 1}/{len(game['info']['participants'])} in game {game_idx + 1}")
+                        
+                        # Create a copy to avoid modifying the original
+                        player_copy = player.copy()
+                        
+                        perks = flatten_perks(player_copy['perks'])
+                        del player_copy['perks']
+                        temp_player = flatten_json(player_copy)
+                        temp_player.update(perks)
+
+                        #remove challenges_ and missions_ from keys
+                        cleaned_player = {}
+                        for key, value in temp_player.items():
+                            if key.startswith("challenges_"):
+                                new_key = key.replace("challenges_", "", 1)
+                            elif key.startswith("missions_"):
+                                new_key = key.replace("missions_", "", 1)
+                            else:
+                                new_key = key
+                            cleaned_player[new_key] = value
+
+                        cleaned_player['dataVersion'] = game['metadata']['dataVersion']
+                        cleaned_player['matchId'] = game['metadata']['matchId']
+
+                        cleaned_player['gameCreation'] = game['info']['gameCreation']
+                        cleaned_player['gameDuration'] = game['info']['gameDuration']
+                        cleaned_player['gameVersion'] = game['info']['gameVersion']
+                        cleaned_player['mapId'] = game['info']['mapId']
+                        
+                        # Add source from game data
+                        if 'source' in game:
+                            cleaned_player['source'] = game['source']
+                        
+                        all_data.append(cleaned_player)
+                
+                # Progress update after each batch
+                print(f"Completed games {batch_start + 1}-{batch_end}, total players processed: {len(all_data)}")
+                
+                # Force garbage collection after each batch to free memory
+                import gc
+                gc.collect()
+                print(f"Memory cleared after batch {batch_start + 1}-{batch_end}")
         
         print(f"Data processing complete: {len(all_data)} total records for table '{table}'")
         logger.info(f"📊 Data processing complete: {len(all_data)} total records for table '{table}'")
