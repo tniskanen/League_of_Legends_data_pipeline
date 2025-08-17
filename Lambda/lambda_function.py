@@ -112,6 +112,7 @@ def lambda_handler(event, context):
                     temp_player.update(perks)
 
                     #remove challenges_ and missions_ from keys
+                    cleaned_player = {}
                     for key, value in temp_player.items():
                         if key.startswith("challenges_"):
                             new_key = key.replace("challenges_", "", 1)
@@ -119,21 +120,21 @@ def lambda_handler(event, context):
                             new_key = key.replace("missions_", "", 1)
                         else:
                             new_key = key
-                        temp_player[new_key] = value
+                        cleaned_player[new_key] = value
 
-                    temp_player['dataVersion'] = game['metadata']['dataVersion']
-                    temp_player['matchId'] = game['metadata']['matchId']
+                    cleaned_player['dataVersion'] = game['metadata']['dataVersion']
+                    cleaned_player['matchId'] = game['metadata']['matchId']
 
-                    temp_player['gameCreation'] = game['info']['gameCreation']
-                    temp_player['gameDuration'] = game['info']['gameDuration']
-                    temp_player['gameVersion'] = game['info']['gameVersion']
-                    temp_player['mapId'] = game['info']['mapId']
+                    cleaned_player['gameCreation'] = game['info']['gameCreation']
+                    cleaned_player['gameDuration'] = game['info']['gameDuration']
+                    cleaned_player['gameVersion'] = game['info']['gameVersion']
+                    cleaned_player['mapId'] = game['info']['mapId']
                     
                     # Add source from game data
                     if 'source' in game:
-                        temp_player['source'] = game['source']
+                        cleaned_player['source'] = game['source']
                     
-                    all_data.append(temp_player)
+                    all_data.append(cleaned_player)
         
         logger.info(f"📊 Data processing complete: {len(all_data)} total records for table '{table}'")
         
