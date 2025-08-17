@@ -103,9 +103,12 @@ def lambda_handler(event, context):
             for game in data['matches']:
                 for player in game['info']['participants']:
                     
-                    perks = flatten_perks(player['perks'])
-                    del player['perks']
-                    temp_player = flatten_json(player)
+                    # Create a copy to avoid modifying the original
+                    player_copy = player.copy()
+                    
+                    perks = flatten_perks(player_copy['perks'])
+                    del player_copy['perks']
+                    temp_player = flatten_json(player_copy)
                     temp_player.update(perks)
 
                     #remove challenges_ and missions_ from keys
