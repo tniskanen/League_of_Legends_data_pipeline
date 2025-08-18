@@ -78,6 +78,7 @@ def lambda_handler(event, context):
         file_content = s3_object['Body'].read()
         data = json.loads(file_content.decode('utf-8'))
         logger.info(f"✅ S3 file loaded successfully")
+        print(f"{fileKey} being processed")
         
         # Debug: Check data structure
         print(f"Data loaded, type: {type(data)}")

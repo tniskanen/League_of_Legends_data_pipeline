@@ -94,14 +94,14 @@ def run_leftovers(config):
                     puuid = participant.get('puuid')
 
                     rank_info = player_rank_map.get(puuid)
-                    if rank_info:
-                        participant['tier'] = rank_info['tier']
-                        participant['rank'] = rank_info['rank']
-                        participant['leaguePoints'] = rank_info['leaguePoints']
-                    else:
-                        participant['tier'] = 'UNKNOWN'
-                        participant['rank'] = None
-                        participant['leaguePoints'] = None
+                if rank_info:
+                    participant['tier'] = rank_info['tier']
+                    participant['player_rank'] = rank_info['player_rank']
+                    participant['leaguePoints'] = rank_info['leaguePoints']
+                else:
+                    participant['tier'] = 'UNKNOWN'
+                    participant['player_rank'] = None
+                    participant['leaguePoints'] = None
 
                 temp_data['source'] = config['source']
                 matches.append(temp_data)

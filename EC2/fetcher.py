@@ -99,6 +99,8 @@ def run_fetcher(config):
 
     for player in ranked_players:
         player['time_stamp'] = timestamp
+        player['player_rank'] = player['rank']
+        del player['rank']
 
     player_rank_map = {ranked_player['puuid']: {k:v for k,v in ranked_player.items() if k != 'puuid'} for ranked_player in ranked_players}
     
