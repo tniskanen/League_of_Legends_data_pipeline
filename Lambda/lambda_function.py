@@ -108,8 +108,8 @@ def lambda_handler(event, context):
             logger.info(f"📊 Processing match data for table: {table}")
             
             all_data = []
-            print(f"Found {len(data)} matches to process")
-            logger.info(f"📋 Processing {len(data)} matches...")
+            print(f"Found {len(data['matches'])} matches to process")
+            logger.info(f"📋 Processing {len(data['matches'])} matches...")
             
             # Monitor memory usage
             import psutil
@@ -117,11 +117,11 @@ def lambda_handler(event, context):
             print(f"Initial memory usage: {initial_memory:.2f} MB")
             
             games_processed = 0
-            while data:  # While there are games left
-                game = data.pop(0)  # Remove first game
+            while data['matches']:  # While there are games left
+                game = data['matches'].pop(0)  # Remove first game
                 games_processed += 1
                 
-                print(f"Processing game {games_processed} (games remaining: {len(data)})")
+                print(f"Processing game {games_processed} (games remaining: {len(data['matches'])})")
                 
                 # Process all players in this game
                 for player_idx, player in enumerate(game['info']['participants']):
@@ -168,7 +168,7 @@ def lambda_handler(event, context):
                     current_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
                     memory_change = current_memory - initial_memory
                     print(f"Memory after {games_processed} games: {current_memory:.2f} MB (change: {memory_change:+.2f} MB)")
-                    print(f"Games remaining: {len(data)}, Players processed: {len(all_data)}")
+                    print(f"Games remaining: {len(data['matches'])}, Players processed: {len(all_data)}")
                     
                     # Force garbage collection
                     import gc
