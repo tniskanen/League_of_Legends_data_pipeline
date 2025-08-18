@@ -54,7 +54,7 @@ def upload_to_s3(bucket, key, data):
         traceback.print_exc()
         raise
 
-def send_match_json(data, bucket, custom_date=None, source=None):
+def send_match_json(data, bucket, custom_date=None, source=None, start_epoch=None, end_epoch=None):
     """
     Upload JSON to S3 with date-based folder structure
     
@@ -63,6 +63,8 @@ def send_match_json(data, bucket, custom_date=None, source=None):
         bucket: S3 bucket name
         custom_date: Optional datetime object, defaults to current UTC time
         source: Optional source string, if 'test' it will be added to the beginning of the S3 key
+        start_epoch: Start epoch for the data window
+        end_epoch: End epoch for the data window
     """
     if not data:
         return None
@@ -94,14 +96,13 @@ def send_match_json(data, bucket, custom_date=None, source=None):
     day = upload_date.strftime('%d')
     
     # Create hierarchical key structure
-    timestamp = int(time.time() * 1000)
     match_count = len(data_copy)
 
-    # Create base key structure
+    # Create base key structure with epoch information
     if source == 'test':
-        s3_key_hive = f"matches/year={year}/month={month}/day={day}/test_batch_{timestamp}_{match_count}_matches.json"
+        s3_key_hive = f"matches/year={year}/month={month}/day={day}/test_batch_{start_epoch}_{end_epoch}_{match_count}_matches.json"
     else:
-        s3_key_hive = f"matches/year={year}/month={month}/day={day}/batch_{timestamp}_{match_count}_matches.json"
+        s3_key_hive = f"matches/year={year}/month={month}/day={day}/batch_{start_epoch}_{end_epoch}_{match_count}_matches.json"
     
     s3_key = s3_key_hive
 
@@ -110,8 +111,10 @@ def send_match_json(data, bucket, custom_date=None, source=None):
         'metadata': {
             'upload_timestamp': upload_date.isoformat(),
             'match_count': match_count,
-            'batch_id': f"{year}{month}{day}_{timestamp}",
-            's3_key': s3_key
+            'batch_id': f"{year}{month}{day}_{start_epoch}_{end_epoch}",
+            's3_key': s3_key,
+            'start_epoch': start_epoch,
+            'end_epoch': end_epoch
         },
         'matches': data_copy
     }

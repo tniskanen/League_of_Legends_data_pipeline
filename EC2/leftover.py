@@ -111,7 +111,7 @@ def run_leftovers(config):
                 # Upload every 500 successful matches
                 if successful_matches % 500 == 0:
                     print(f"Uploading batch of {successful_matches} matches to S3 (total processed: {total})")
-                    thread = send_match_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'])  # Explicit copy
+                    thread = send_match_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'], start_epoch=config['start_epoch'], end_epoch=config['end_epoch'])  # Explicit copy
                     if thread:
                         active_threads.append(thread)
                     matches = []
@@ -138,7 +138,7 @@ def run_leftovers(config):
         # Upload remaining matches
         if matches:
             print(f"Uploading final batch of {len(matches)} matches")
-            thread = send_match_json(data=matches, bucket=config['BUCKET'], source=config['source'])
+            thread = send_match_json(data=matches, bucket=config['BUCKET'], source=config['source'], start_epoch=config['start_epoch'], end_epoch=config['end_epoch'])
             if thread:
                 active_threads.append(thread)
 
