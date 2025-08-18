@@ -297,6 +297,7 @@ def lambda_handler(event, context):
     except (s3_client.exceptions.NoSuchBucket, s3_client.exceptions.NoSuchKey) as e:
         # S3 issues - don't retry
         logger.error(f"S3 Error: {e}")
+        logger.error(f"Error occurred while processing: {fileKey}")
         return format_error_response(
             error=e,
             error_type="s3_error",
