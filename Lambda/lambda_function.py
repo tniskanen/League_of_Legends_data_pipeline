@@ -108,65 +108,80 @@ def lambda_handler(event, context):
             logger.info(f"📊 Processing match data for table: {table}")
             
             all_data = []
-            print(f"Found {len(data['matches'])} matches to process")
-            logger.info(f"📋 Processing {len(data['matches'])} matches...")
+            print(f"Found {len(data)} matches to process")
+            logger.info(f"📋 Processing {len(data)} matches...")
             
-            # Process games in batches of 25 to manage memory
-            game_batch_size = 25
-            total_games = len(data['matches'])
+            # Monitor memory usage
+            import psutil
+            initial_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
+            print(f"Initial memory usage: {initial_memory:.2f} MB")
             
-            for batch_start in range(0, total_games, game_batch_size):
-                batch_end = min(batch_start + game_batch_size, total_games)
-                print(f"Processing games {batch_start + 1}-{batch_end} of {total_games}")
+            games_processed = 0
+            while data:  # While there are games left
+                game = data.pop(0)  # Remove first game
+                games_processed += 1
                 
-                # Process this batch of games
-                for game_idx in range(batch_start, batch_end):
-                    game = data['matches'][game_idx]
-                    print(f"Processing game {game_idx + 1}/{total_games}")
+                print(f"Processing game {games_processed} (games remaining: {len(data)})")
+                
+                # Process all players in this game
+                for player_idx, player in enumerate(game['info']['participants']):
+                    print(f"  Processing player {player_idx + 1}/{len(game['info']['participants'])} in game {games_processed}")
                     
-                    for player_idx, player in enumerate(game['info']['participants']):
-                        print(f"  Processing player {player_idx + 1}/{len(game['info']['participants'])} in game {game_idx + 1}")
-                        
-                        # Create a copy to avoid modifying the original
-                        player_copy = player.copy()
-                        
-                        perks = flatten_perks(player_copy['perks'])
-                        del player_copy['perks']
-                        temp_player = flatten_json(player_copy)
-                        temp_player.update(perks)
+                    # Create a copy to avoid modifying the original
+                    player_copy = player.copy()
+                    
+                    perks = flatten_perks(player_copy['perks'])
+                    del player_copy['perks']
+                    temp_player = flatten_json(player_copy)
+                    temp_player.update(perks)
 
-                        #remove challenges_ and missions_ from keys
-                        cleaned_player = {}
-                        for key, value in temp_player.items():
-                            if key.startswith("challenges_"):
-                                new_key = key.replace("challenges_", "", 1)
-                            elif key.startswith("missions_"):
-                                new_key = key.replace("missions_", "", 1)
-                            else:
-                                new_key = key
-                            cleaned_player[new_key] = value
+                    #remove challenges_ and missions_ from keys
+                    cleaned_player = {}
+                    for key, value in temp_player.items():
+                        if key.startswith("challenges_"):
+                            new_key = key.replace("challenges_", "", 1)
+                        elif key.startswith("missions_"):
+                            new_key = key.replace("missions_", "", 1)
+                        else:
+                            new_key = key
+                        cleaned_player[new_key] = value
 
-                        cleaned_player['dataVersion'] = game['metadata']['dataVersion']
-                        cleaned_player['matchId'] = game['metadata']['matchId']
+                    cleaned_player['dataVersion'] = game['metadata']['dataVersion']
+                    cleaned_player['matchId'] = game['metadata']['matchId']
 
-                        cleaned_player['gameCreation'] = game['info']['gameCreation']
-                        cleaned_player['gameDuration'] = game['info']['gameDuration']
-                        cleaned_player['gameVersion'] = game['info']['gameVersion']
-                        cleaned_player['mapId'] = game['info']['mapId']
-                        
-                        # Add source from game data
-                        if 'source' in game:
-                            cleaned_player['source'] = game['source']
-                        
-                        all_data.append(cleaned_player)
+                    cleaned_player['gameCreation'] = game['info']['gameCreation']
+                    cleaned_player['gameDuration'] = game['info']['gameDuration']
+                    cleaned_player['gameVersion'] = game['info']['gameVersion']
+                    cleaned_player['mapId'] = game['info']['mapId']
+                    
+                    # Add source from game data
+                    if 'source' in game:
+                        cleaned_player['source'] = game['source']
+                    
+                    all_data.append(cleaned_player)
                 
-                # Progress update after each batch
-                print(f"Completed games {batch_start + 1}-{batch_end}, total players processed: {len(all_data)}")
+                # Game is now completely processed, clear it from memory
+                game = None
                 
-                # Force garbage collection after each batch to free memory
-                import gc
-                gc.collect()
-                print(f"Memory cleared after batch {batch_start + 1}-{batch_end}")
+                # Monitor memory every 10 games
+                if games_processed % 10 == 0:
+                    current_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
+                    memory_change = current_memory - initial_memory
+                    print(f"Memory after {games_processed} games: {current_memory:.2f} MB (change: {memory_change:+.2f} MB)")
+                    print(f"Games remaining: {len(data)}, Players processed: {len(all_data)}")
+                    
+                    # Force garbage collection
+                    import gc
+                    gc.collect()
+                    after_gc_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
+                    print(f"Memory after GC: {after_gc_memory:.2f} MB (freed: {current_memory - after_gc_memory:.2f} MB)")
+            
+            # Final memory report
+            final_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
+            total_memory_change = final_memory - initial_memory
+            print(f"Final memory usage: {final_memory:.2f} MB (total change: {total_memory_change:+.2f} MB)")
+            print(f"Total games processed: {games_processed}")
+            print(f"Total players processed: {len(all_data)}")
         
         print(f"Data processing complete: {len(all_data)} total records for table '{table}'")
         logger.info(f"📊 Data processing complete: {len(all_data)} total records for table '{table}'")
