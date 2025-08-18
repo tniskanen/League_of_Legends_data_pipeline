@@ -121,12 +121,8 @@ def lambda_handler(event, context):
                 game = data['matches'].pop(0)  # Remove first game
                 games_processed += 1
                 
-                print(f"Processing game {games_processed} (games remaining: {len(data['matches'])})")
-                
                 # Process all players in this game
                 for player_idx, player in enumerate(game['info']['participants']):
-                    print(f"  Processing player {player_idx + 1}/{len(game['info']['participants'])} in game {games_processed}")
-                    
                     # Create a copy to avoid modifying the original
                     player_copy = player.copy()
                     
@@ -163,11 +159,12 @@ def lambda_handler(event, context):
                 # Game is now completely processed, clear it from memory
                 game = None
                 
-                # Monitor memory every 10 games
-                if games_processed % 10 == 0:
+                # Monitor memory every 100 games
+                if games_processed % 100 == 0:
                     current_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
                     memory_change = current_memory - initial_memory
-                    print(f"Memory after {games_processed} games: {current_memory:.2f} MB (change: {memory_change:+.2f} MB)")
+                    print(f"Progress: {games_processed}/{len(data['matches']) + games_processed} games processed")
+                    print(f"Memory: {current_memory:.2f} MB (change: {memory_change:+.2f} MB)")
                     print(f"Games remaining: {len(data['matches'])}, Players processed: {len(all_data)}")
                     
                     # Force garbage collection
@@ -175,6 +172,7 @@ def lambda_handler(event, context):
                     gc.collect()
                     after_gc_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
                     print(f"Memory after GC: {after_gc_memory:.2f} MB (freed: {current_memory - after_gc_memory:.2f} MB)")
+                    print("---")
             
             # Final memory report
             final_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB

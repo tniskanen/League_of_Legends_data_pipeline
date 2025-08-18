@@ -22,7 +22,12 @@ def flatten_json(nested_json):
 
         # If the current element is a value (neither dict nor list):
         else:
-            out["_".join(path)] = current  # Join the path into a string (using underscores) and store the value
+
+            #not including legendaryItemUsed 
+            if 'legendaryItemUsed' in path:
+                continue
+            else:
+                out["_".join(path)] = current  # Join the path into a string (using underscores) and store the value
 
     return out  # Return the flattened dictionary
 
