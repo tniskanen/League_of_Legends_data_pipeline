@@ -2,6 +2,7 @@ import json
 import boto3
 import sys
 import time
+import urllib.parse
 
 # Test imports immediately and catch any import errors
 try:
@@ -29,8 +30,13 @@ def lambda_handler(event, context):
     bucket = event['Records'][0]['s3']['bucket']['name']
     fileKey = event['Records'][0]['s3']['object']['key']
     
+    # Decode the URL-encoded S3 key
+    decoded_fileKey = urllib.parse.unquote(fileKey)
+    
     logger.info(f"🚀 Starting Lambda execution")
-    logger.info(f"📁 Processing: s3://{bucket}/{fileKey}")
+    logger.info(f"📁 Processing: s3://{bucket}/{decoded_fileKey}")
+    logger.info(f"🔍 Original key: {fileKey}")
+    logger.info(f"🔍 Decoded key: {decoded_fileKey}")
     logger.info(f"🆔 Request ID: {context.aws_request_id}")
     
     #loading environment variables
@@ -74,11 +80,11 @@ def lambda_handler(event, context):
 
     try:
         logger.info("📥 Downloading and parsing S3 file...")
-        s3_object = s3_client.get_object(Bucket=bucket, Key=fileKey)
+        s3_object = s3_client.get_object(Bucket=bucket, Key=decoded_fileKey)
         file_content = s3_object['Body'].read()
         data = json.loads(file_content.decode('utf-8'))
         logger.info(f"✅ S3 file loaded successfully")
-        print(f"{fileKey} being processed")
+        print(f"{decoded_fileKey} being processed")
         
         # Debug: Check data structure
         print(f"Data loaded, type: {type(data)}")
@@ -86,7 +92,7 @@ def lambda_handler(event, context):
         
         # Determine data type and table based on file path
         print("About to process data...")
-        if "player-maps" in fileKey:   
+        if "player-maps" in decoded_fileKey:   
             print("Processing player-maps data")
             table = "player_ranks_data"
             print(f"Table set to: {table}")
@@ -356,7 +362,7 @@ def lambda_handler(event, context):
     execution_time = time.time() - transaction_state.get('start_time', time.time())
     logger.info("🎉 Lambda execution completed successfully!")
     logger.info(f"📊 Final Summary:")
-    logger.info(f"   File processed: s3://{bucket}/{fileKey}")
+    logger.info(f"   File processed: s3://{bucket}/{decoded_fileKey}")
     logger.info(f"   Table: {table}")
     logger.info(f"   Total records processed: {transaction_state.get('total_records', 0)}")
     logger.info(f"   Database transaction time: {transaction_state.get('duration', 0):.2f} seconds")
