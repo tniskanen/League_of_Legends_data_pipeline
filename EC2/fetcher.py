@@ -42,6 +42,9 @@ def run_fetcher(config):
             print(f"  Fetching {rank} players...")
             json_response = highElo(rank, config['API_KEY'])
             if json_response and 'entries' in json_response:
+                tier = json_response['tier']
+                for entry in json_response['entries']:
+                    entry['tier'] = tier
                 high_elo_players.extend(json_response['entries'])
                 print(f"    Added {len(json_response['entries'])} {rank} players (total: {len(high_elo_players)})")
                 if (len(low_elo_players) + len(high_elo_players)) >= config['MAX_PLAYER_COUNT']:
@@ -88,42 +91,17 @@ def run_fetcher(config):
 
     print(f"Player collection complete: High={len(high_elo_players)}, Low={len(low_elo_players)}, Total={len(high_elo_players) + len(low_elo_players)}")
 
-    # Build a dictionary mapping puuid -> rank data
-    normalized_high_elo = []
-
-    for player in high_elo_players:
-        normalized_high_elo.append({
-            'puuid': player['puuid'],
-            'tier': None, 
-            'rank': None, 
-            'lp': player.get('leaguePoints', 0)
-        })
-
-    normalized_low_elo = []
-
-    for player in low_elo_players:
-        normalized_low_elo.append({
-            'puuid': player['puuid'],
-            'tier': player['tier'].upper(),  # e.g., "DIAMOND", "PLATINUM"
-            'rank': player.get('rank', None),  # e.g., "I", "II", "III", "IV"
-            'lp': player.get('leaguePoints', 0)
-        })
-
     # Limit player list to the environment-defined max (e.g., 100 for test, 100000 for prod)
-    ranked_players = normalized_high_elo + normalized_low_elo
+    high_elo_players.extend(low_elo_players)
+    ranked_players = high_elo_players
 
-    timestamp = time.time()
+    timestamp = int(time.time())
 
-    player_rank_map = {
-        player['puuid']: {
-            'tier': player['tier'],
-            'rank': player['rank'],
-            'lp': player['lp'],
-            'time_stamp' : timestamp
-        }
-        for player in ranked_players if 'puuid' in player
-    }
+    for player in ranked_players:
+        player['time_stamp'] = timestamp
 
+    player_rank_map = {ranked_player['puuid']: {k:v for k,v in ranked_player.items() if k != 'puuid'} for ranked_player in ranked_players}
+    
     ranked_players = ranked_players[:config['MAX_PLAYER_COUNT']]
     print(f"Created rank mapping for {len(player_rank_map)} players")
     print("Fetching match lists...")

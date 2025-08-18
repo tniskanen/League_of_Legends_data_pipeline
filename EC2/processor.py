@@ -125,11 +125,11 @@ def run_processor(config, matchlist):
                 if rank_info:
                     participant['tier'] = rank_info['tier']
                     participant['rank'] = rank_info['rank']
-                    participant['lp'] = rank_info['lp']
+                    participant['leaguePoints'] = rank_info['leaguePoints']
                 else:
                     participant['tier'] = 'UNKNOWN'
                     participant['rank'] = None
-                    participant['lp'] = None
+                    participant['leaguePoints'] = None
 
             temp_data['source'] = config['source']
             matches.append(temp_data)
