@@ -17,7 +17,16 @@ mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/container_run_$(date +%Y%m%d_%H%M%S).log"
 
 # FIXED: Ultra-simple logging setup that works in both interactive and background modes
+# This ensures shell script logs go to the local file
 exec > >(tee -a "$LOG_FILE") 2>&1
+
+# Verify logging is working
+echo "🔍 Logging setup verification:"
+echo "   Log directory: $LOG_DIR"
+echo "   Log file: $LOG_FILE"
+echo "   Current user: $(whoami)"
+echo "   Can write to log file: $(touch "$LOG_FILE" 2>/dev/null && echo "YES" || echo "NO")"
+echo "   Log file size: $(wc -c < "$LOG_FILE" 2>/dev/null || echo "0") bytes"
 
 # Enable debug mode if requested
 if [ "${DEBUG:-false}" = "true" ]; then
@@ -245,7 +254,7 @@ load_environment_vars() {
             echo "📤 Attempting to send shutdown logs to CloudWatch..."
             echo "🔍 Debug: CLOUDWATCH_LOG_GROUP = '${CLOUDWATCH_LOG_GROUP}'"
             echo "🔍 Debug: SEND_LOGS_TO_CLOUDWATCH = '${SEND_LOGS_TO_CLOUDWATCH}'"
-            if send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"; then
+            if send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID" "${CLOUDWATCH_LOG_STREAM}"; then
                 echo "✅ CloudWatch logging completed successfully before shutdown"
             else
                 echo "⚠️ CloudWatch logging failed, but continuing with shutdown"
@@ -260,6 +269,10 @@ load_environment_vars() {
     export start_epoch=$(jq -r '.start_epoch' window.json)
     export end_epoch=$(jq -r '.end_epoch' window.json)
     echo "✅ Final epoch window: $start_epoch to $end_epoch"
+    
+    # Set CloudWatch log stream name early so it's available for error handling
+    export CLOUDWATCH_LOG_STREAM="container-${CONTAINER_NAME:-lol_data_container}-${start_epoch}-${end_epoch}"
+    echo "📊 CloudWatch log stream will be: ${CLOUDWATCH_LOG_STREAM}"
 
     # Construct ECR URI
     export ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${REPO_NAME}:latest"
@@ -417,9 +430,9 @@ EOF
         echo "📊 Reset SLOWDOWN to false"
     fi
 
-    # Configure CloudWatch logging
+    # Configure CloudWatch logging - Use epoch format for both shell script and container
     CLOUDWATCH_LOG_GROUP="${CLOUDWATCH_LOG_GROUP:-/aws/ec2/containers/lol_data_container}"
-    CLOUDWATCH_LOG_STREAM="container-${CONTAINER_NAME}-${start_epoch}-${end_epoch}"
+    # CLOUDWATCH_LOG_STREAM is already set earlier in the script
     
     # Build Docker run command with conditional CloudWatch logging
     DOCKER_CMD_ARGS="--name ${CONTAINER_NAME} -d ${PORT_MAPPING} ${VOLUME_MAPPING} ${ENV_VARS} ${EXTRA_ARGS}"
@@ -428,13 +441,17 @@ EOF
     if [ "${ENABLE_CLOUDWATCH_LOGS:-false}" = "true" ]; then
         DOCKER_CMD_ARGS="${DOCKER_CMD_ARGS} --log-driver=awslogs --log-opt awslogs-group=${CLOUDWATCH_LOG_GROUP} --log-opt awslogs-region=${REGION} --log-opt awslogs-stream=${CLOUDWATCH_LOG_STREAM}"
         echo "📊 CloudWatch logging enabled: ${CLOUDWATCH_LOG_GROUP}/${CLOUDWATCH_LOG_STREAM}"
+        echo "📝 Note: Container logs will go to CloudWatch, shell script logs remain in: $LOG_FILE"
     else
         echo "📊 CloudWatch logging disabled"
+        echo "📝 Note: All logs (container + shell script) will go to: $LOG_FILE"
     fi
     
     # Show the Docker command being executed
     echo "🔍 Running Docker command:"
     echo "$DOCKER_CMD run ${DOCKER_CMD_ARGS} ${ECR_URI}"
+    echo "📝 Shell script logs are being written to: $LOG_FILE"
+    echo "📊 Container logs will go to CloudWatch: ${CLOUDWATCH_LOG_GROUP}/${CLOUDWATCH_LOG_STREAM}"
 
     # Run container with IAM role and conditional CloudWatch logging
     echo "🏃 Starting Docker container: ${CONTAINER_NAME}"
@@ -442,6 +459,12 @@ EOF
     
     if [ $? -eq 0 ]; then
         echo "✅ Container started with ID: ${CONTAINER_ID}"
+        
+        # Verify shell script logging is still working
+        echo "🔍 Verifying shell script logging after container start:"
+        echo "   Log file: $LOG_FILE"
+        echo "   Log file size: $(wc -c < "$LOG_FILE" 2>/dev/null || echo "0") bytes"
+        echo "   Can still write to log file: $(echo "Test log entry" >> "$LOG_FILE" 2>/dev/null && echo "YES" || echo "NO")"
         
         # Wait a moment for container to initialize
         sleep 3
@@ -513,7 +536,7 @@ EOF
                 echo "📤 Attempting to send immediate failure logs to CloudWatch..."
                 echo "🔍 Debug: CLOUDWATCH_LOG_GROUP = '${CLOUDWATCH_LOG_GROUP}'"
                 echo "🔍 Debug: SEND_LOGS_TO_CLOUDWATCH = '${SEND_LOGS_TO_CLOUDWATCH}'"
-                if send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"; then
+                if send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID" "${CLOUDWATCH_LOG_STREAM}"; then
                     echo "✅ CloudWatch logging completed successfully before exit"
                 else
                     echo "⚠️ CloudWatch logging failed, but continuing with exit"
@@ -657,7 +680,7 @@ EOF
             echo "📤 Attempting to send combined logs to CloudWatch..."
             echo "🔍 Debug: CLOUDWATCH_LOG_GROUP = '${CLOUDWATCH_LOG_GROUP}'"
             echo "🔍 Debug: SEND_LOGS_TO_CLOUDWATCH = '${SEND_LOGS_TO_CLOUDWATCH}'"
-            if send_logs_to_cloudwatch "$COMBINED_LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"; then
+            if send_logs_to_cloudwatch "$COMBINED_LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID" "${CLOUDWATCH_LOG_STREAM}"; then
                 echo "✅ CloudWatch logging completed successfully"
             else
                 echo "⚠️ CloudWatch logging failed, but continuing with cleanup"
