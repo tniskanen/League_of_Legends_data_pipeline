@@ -24,3 +24,5 @@ var/
 .log
 ec2_deploy/
 lambda_deploy/
+15.16.1/data/en_US/
+data_dragon.py

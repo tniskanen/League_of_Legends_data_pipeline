@@ -102,7 +102,7 @@ def run_processor(config, matchlist):
                 }
                 
                 # Upload leftovers to S3
-                key = f'backfill/leftovers/leftovers_{config["start_epoch"]}_{config["end_epoch"]}_.json'
+                key = f'backfill/leftovers/leftovers_{config["start_epoch"]}_{config["end_epoch"]}_{len(unprocessed_matches)}_matches.json'
                 upload_to_s3(config['BUCKET'], key, data_to_upload)
                 print(f"✅ Unprocessed matches saved to: {key}")
 
@@ -139,7 +139,7 @@ def run_processor(config, matchlist):
             # Upload every 500 successful matches
             if successful_matches % 500 == 0:
                 print(f"Uploading batch of {successful_matches} matches to S3 (total processed: {total})")
-                thread = send_match_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'], start_epoch=config['start_epoch'], end_epoch=config['end_epoch'])  # Explicit copy
+                thread = send_match_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'])  # Explicit copy
                 if thread:
                     active_threads.append(thread)
                 matches = []
@@ -162,14 +162,14 @@ def run_processor(config, matchlist):
         }
         
         # Upload leftovers to S3
-        key = f'backfill/leftovers/leftovers_{config["start_epoch"]}_{config["end_epoch"]}_.json'
+        key = f'backfill/leftovers/leftovers_{config["start_epoch"]}_{config["end_epoch"]}_{len(unprocessed_matches)}_matches.json'
         upload_to_s3(config['BUCKET'], key, data_to_upload)
         print(f"✅ Unprocessed matches saved to: {key}")
 
     # Upload remaining matches
     if matches:
         print(f"Uploading final batch of {len(matches)} matches")
-        thread = send_match_json(data=matches, bucket=config['BUCKET'], source=config['source'], start_epoch=config['start_epoch'], end_epoch=config['end_epoch'])
+        thread = send_match_json(data=matches, bucket=config['BUCKET'], source=config['source'])
         if thread:
             active_threads.append(thread)
 

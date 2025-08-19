@@ -75,7 +75,7 @@ def run_leftovers(config):
                     # Upload leftovers to S3
                     key = leftover
                     alter_s3_file(config['BUCKET'], key, 'overwrite', data_to_upload)
-                    print(f"✅ Date Overwritten to {key}")
+                    print(f"✅ Data overwritten to {key} with {len(unprocessed_matches)} unprocessed matches")
 
                     print(f"🛑 Processing stopped due to API key expiration. Processed {i}/{len(uniqueMatches)} matches.")
                     api_expired = True  # Set flag to stop outer loop
@@ -111,7 +111,7 @@ def run_leftovers(config):
                 # Upload every 500 successful matches
                 if successful_matches % 500 == 0:
                     print(f"Uploading batch of {successful_matches} matches to S3 (total processed: {total})")
-                    thread = send_match_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'], start_epoch=config['start_epoch'], end_epoch=config['end_epoch'])  # Explicit copy
+                    thread = send_match_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'])  # Explicit copy
                     if thread:
                         active_threads.append(thread)
                     matches = []
@@ -133,12 +133,12 @@ def run_leftovers(config):
                 # Upload leftovers to S3
                 key = leftover
                 alter_s3_file(config['BUCKET'], key, 'overwrite', data_to_upload)
-                print(f"✅ Date Overwritten to {key}")
+                print(f"✅ Data overwritten to {key} with {len(unprocessed_matches)} unprocessed matches")
 
         # Upload remaining matches
         if matches:
             print(f"Uploading final batch of {len(matches)} matches")
-            thread = send_match_json(data=matches, bucket=config['BUCKET'], source=config['source'], start_epoch=config['start_epoch'], end_epoch=config['end_epoch'])
+            thread = send_match_json(data=matches, bucket=config['BUCKET'], source=config['source'])
             if thread:
                 active_threads.append(thread)
 

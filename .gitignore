@@ -20,3 +20,7 @@ RIOT_EC2.pem
 *.egg-info/
 
 json_test.py
+
+15.16.1/data/en_US/
+
+data_dragon.py
