@@ -28,6 +28,20 @@ echo "   Current user: $(whoami)"
 echo "   Can write to log file: $(touch "$LOG_FILE" 2>/dev/null && echo "YES" || echo "NO")"
 echo "   Log file size: $(wc -c < "$LOG_FILE" 2>/dev/null || echo "0") bytes"
 
+# Test basic CloudWatch access
+echo "🔍 Testing basic CloudWatch access..."
+if aws sts get-caller-identity --query 'Arn' --output text 2>/dev/null; then
+    echo "✅ AWS CLI access confirmed"
+    echo "🔍 Testing CloudWatch describe-log-groups..."
+    if aws logs describe-log-groups --region us-east-2 --max-items 1 2>/dev/null; then
+        echo "✅ CloudWatch access confirmed"
+    else
+        echo "❌ CloudWatch access failed"
+    fi
+else
+    echo "❌ AWS CLI access failed"
+fi
+
 # Enable debug mode if requested
 if [ "${DEBUG:-false}" = "true" ]; then
     set -x
@@ -70,6 +84,9 @@ load_environment_vars() {
         source /home/ec2-user/ec2.env
         set +o allexport
         echo "✅ Environment variables loaded from /home/ec2-user/ec2.env"
+        echo "🔍 Debug: ENABLE_CLOUDWATCH_LOGS = '${ENABLE_CLOUDWATCH_LOGS}'"
+        echo "🔍 Debug: CLOUDWATCH_LOG_GROUP = '${CLOUDWATCH_LOG_GROUP}'"
+        echo "🔍 Debug: SEND_LOGS_TO_CLOUDWATCH = '${SEND_LOGS_TO_CLOUDWATCH}'"
     else
         echo "⚠️ ec2.env file not found at /home/ec2-user/ec2.env, using defaults and environment"
     fi
@@ -254,6 +271,9 @@ load_environment_vars() {
             echo "📤 Attempting to send shutdown logs to CloudWatch..."
             echo "🔍 Debug: CLOUDWATCH_LOG_GROUP = '${CLOUDWATCH_LOG_GROUP}'"
             echo "🔍 Debug: SEND_LOGS_TO_CLOUDWATCH = '${SEND_LOGS_TO_CLOUDWATCH}'"
+            echo "🔍 Debug: CLOUDWATCH_LOG_STREAM = '${CLOUDWATCH_LOG_STREAM}'"
+            echo "🔍 Debug: LOG_FILE = '$LOG_FILE'"
+            echo "🔍 Debug: INSTANCE_ID = '$INSTANCE_ID'"
             if send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID" "${CLOUDWATCH_LOG_STREAM}"; then
                 echo "✅ CloudWatch logging completed successfully before shutdown"
             else
@@ -273,6 +293,9 @@ load_environment_vars() {
     # Set CloudWatch log stream name early so it's available for error handling
     export CLOUDWATCH_LOG_STREAM="container-${CONTAINER_NAME:-lol_data_container}-${start_epoch}-${end_epoch}"
     echo "📊 CloudWatch log stream will be: ${CLOUDWATCH_LOG_STREAM}"
+    echo "🔍 Debug: CONTAINER_NAME=${CONTAINER_NAME}"
+    echo "🔍 Debug: start_epoch=${start_epoch}"
+    echo "🔍 Debug: end_epoch=${end_epoch}"
 
     # Construct ECR URI
     export ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${REPO_NAME}:latest"
@@ -439,10 +462,17 @@ EOF
     
     # Add CloudWatch logging if enabled
     if [ "${ENABLE_CLOUDWATCH_LOGS:-false}" = "true" ]; then
+        echo "🔍 Debug: ENABLE_CLOUDWATCH_LOGS is true"
+        echo "🔍 Debug: CLOUDWATCH_LOG_GROUP=${CLOUDWATCH_LOG_GROUP}"
+        echo "🔍 Debug: REGION=${REGION}"
+        echo "🔍 Debug: CLOUDWATCH_LOG_STREAM=${CLOUDWATCH_LOG_STREAM}"
+        
         DOCKER_CMD_ARGS="${DOCKER_CMD_ARGS} --log-driver=awslogs --log-opt awslogs-group=${CLOUDWATCH_LOG_GROUP} --log-opt awslogs-region=${REGION} --log-opt awslogs-stream=${CLOUDWATCH_LOG_STREAM}"
         echo "📊 CloudWatch logging enabled: ${CLOUDWATCH_LOG_GROUP}/${CLOUDWATCH_LOG_STREAM}"
         echo "📝 Note: Container logs will go to CloudWatch, shell script logs remain in: $LOG_FILE"
     else
+        echo "🔍 Debug: ENABLE_CLOUDWATCH_LOGS is false or not set"
+        echo "🔍 Debug: ENABLE_CLOUDWATCH_LOGS value: '${ENABLE_CLOUDWATCH_LOGS}'"
         echo "📊 CloudWatch logging disabled"
         echo "📝 Note: All logs (container + shell script) will go to: $LOG_FILE"
     fi
@@ -536,6 +566,9 @@ EOF
                 echo "📤 Attempting to send immediate failure logs to CloudWatch..."
                 echo "🔍 Debug: CLOUDWATCH_LOG_GROUP = '${CLOUDWATCH_LOG_GROUP}'"
                 echo "🔍 Debug: SEND_LOGS_TO_CLOUDWATCH = '${SEND_LOGS_TO_CLOUDWATCH}'"
+                echo "🔍 Debug: CLOUDWATCH_LOG_STREAM = '${CLOUDWATCH_LOG_STREAM}'"
+                echo "🔍 Debug: LOG_FILE = '$LOG_FILE'"
+                echo "🔍 Debug: INSTANCE_ID = '$INSTANCE_ID'"
                 if send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID" "${CLOUDWATCH_LOG_STREAM}"; then
                     echo "✅ CloudWatch logging completed successfully before exit"
                 else
@@ -679,7 +712,9 @@ EOF
             
             echo "📤 Attempting to send combined logs to CloudWatch..."
             echo "🔍 Debug: CLOUDWATCH_LOG_GROUP = '${CLOUDWATCH_LOG_GROUP}'"
-            echo "🔍 Debug: SEND_LOGS_TO_CLOUDWATCH = '${SEND_LOGS_TO_CLOUDWATCH}'"
+            echo "🔍 Debug: CLOUDWATCH_LOG_STREAM = '${CLOUDWATCH_LOG_STREAM}'"
+            echo "🔍 Debug: COMBINED_LOG_FILE = '$COMBINED_LOG_FILE'"
+            echo "🔍 Debug: INSTANCE_ID = '$INSTANCE_ID'"
             if send_logs_to_cloudwatch "$COMBINED_LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID" "${CLOUDWATCH_LOG_STREAM}"; then
                 echo "✅ CloudWatch logging completed successfully"
             else
