@@ -257,7 +257,7 @@ load_environment_vars() {
             echo "🔍 Debug: CLOUDWATCH_LOG_GROUP = '${CLOUDWATCH_LOG_GROUP}'"
             echo "🔍 Debug: SEND_LOGS_TO_CLOUDWATCH = '${SEND_LOGS_TO_CLOUDWATCH}'"
 
-            if send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID" "${CLOUDWATCH_LOG_STREAM}"; then
+            if send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"; then
                 echo "✅ CloudWatch logging completed successfully before shutdown"
             else
                 echo "⚠️ CloudWatch logging failed, but continuing with shutdown"
@@ -273,9 +273,7 @@ load_environment_vars() {
     export end_epoch=$(jq -r '.end_epoch' window.json)
     echo "✅ Final epoch window: $start_epoch to $end_epoch"
     
-    # Set CloudWatch log stream name early so it's available for error handling
-    export CLOUDWATCH_LOG_STREAM="container-${CONTAINER_NAME:-lol_data_container}-${start_epoch}-${end_epoch}"
-    echo "📊 CloudWatch log stream will be: ${CLOUDWATCH_LOG_STREAM}"
+
 
     # Construct ECR URI
     export ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${REPO_NAME}:latest"
@@ -328,8 +326,7 @@ setup_container_params() {
     ENV_VARS="${ENV_VARS} -e end_epoch=${end_epoch}"
     ENV_VARS="${ENV_VARS} -e API_KEY=${API_KEY}"
     ENV_VARS="${ENV_VARS} -e API_KEY_EXPIRATION=${API_KEY_EXPIRATION}"
-    ENV_VARS="${ENV_VARS} -e CLOUDWATCH_LOG_GROUP=${CLOUDWATCH_LOG_GROUP}"
-    ENV_VARS="${ENV_VARS} -e CLOUDWATCH_LOG_STREAM=${CLOUDWATCH_LOG_STREAM}"
+
 
     
     # Extra Docker arguments
@@ -436,30 +433,19 @@ EOF
 
 
     
-    # Configure CloudWatch logging - Use epoch format for both shell script and container
-    CLOUDWATCH_LOG_GROUP="${CLOUDWATCH_LOG_GROUP:-/aws/ec2/containers/lol_data_container}"
-    # CLOUDWATCH_LOG_STREAM is already set earlier in the script
-    
-    # Build Docker run command with conditional CloudWatch logging
-    DOCKER_CMD_ARGS="--name ${CONTAINER_NAME} -d ${PORT_MAPPING} ${VOLUME_MAPPING} ${ENV_VARS} ${EXTRA_ARGS}"
-    
-    # Add CloudWatch logging if enabled
-    if [ "${ENABLE_CLOUDWATCH_LOGS:-false}" = "true" ]; then
-        DOCKER_CMD_ARGS="${DOCKER_CMD_ARGS} --log-driver=awslogs --log-opt awslogs-group=${CLOUDWATCH_LOG_GROUP} --log-opt awslogs-region=${REGION} --log-opt awslogs-stream=${CLOUDWATCH_LOG_STREAM}"
-        echo "📊 CloudWatch logging enabled: ${CLOUDWATCH_LOG_GROUP}/${CLOUDWATCH_LOG_STREAM}"
-        echo "📝 Note: Container logs will go to CloudWatch, shell script logs remain in: $LOG_FILE"
-    else
-        echo "📊 CloudWatch logging disabled"
-        echo "📝 Note: All logs (container + shell script) will go to: $LOG_FILE"
-    fi
-
     # Show the Docker command being executed
     echo "🔍 Running Docker command:"
-    echo "$DOCKER_CMD run ${DOCKER_CMD_ARGS} ${ECR_URI}"
+    echo "$DOCKER_CMD run --name ${CONTAINER_NAME} -d ${PORT_MAPPING} ${VOLUME_MAPPING} ${ENV_VARS} ${EXTRA_ARGS} ${ECR_URI}"
 
-    # Run container with IAM role and conditional CloudWatch logging
+    # Run container with IAM role
     echo "🏃 Starting Docker container: ${CONTAINER_NAME}"
-    CONTAINER_ID=$($DOCKER_CMD run ${DOCKER_CMD_ARGS} "${ECR_URI}")
+    CONTAINER_ID=$($DOCKER_CMD run --name "${CONTAINER_NAME}" \
+        -d \
+        ${PORT_MAPPING} \
+        ${VOLUME_MAPPING} \
+        ${ENV_VARS} \
+        ${EXTRA_ARGS} \
+        "${ECR_URI}")
     
     if [ $? -eq 0 ]; then
         echo "✅ Container started with ID: ${CONTAINER_ID}"
@@ -541,7 +527,7 @@ EOF
                 echo "🔍 Debug: CLOUDWATCH_LOG_GROUP = '${CLOUDWATCH_LOG_GROUP}'"
                 echo "🔍 Debug: SEND_LOGS_TO_CLOUDWATCH = '${SEND_LOGS_TO_CLOUDWATCH}'"
 
-                if send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID" "${CLOUDWATCH_LOG_STREAM}"; then
+                if send_logs_to_cloudwatch "$LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"; then
                     echo "✅ CloudWatch logging completed successfully before exit"
                 else
                     echo "⚠️ CloudWatch logging failed, but continuing with exit"
@@ -685,7 +671,7 @@ EOF
             echo "📤 Attempting to send combined logs to CloudWatch..."
             echo "🔍 Debug: CLOUDWATCH_LOG_GROUP = '${CLOUDWATCH_LOG_GROUP}'"
 
-            if send_logs_to_cloudwatch "$COMBINED_LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID" "${CLOUDWATCH_LOG_STREAM}"; then
+            if send_logs_to_cloudwatch "$COMBINED_LOG_FILE" "${CLOUDWATCH_LOG_GROUP}" "$INSTANCE_ID"; then
                 echo "✅ CloudWatch logging completed successfully"
             else
                 echo "⚠️ CloudWatch logging failed, but continuing with cleanup"

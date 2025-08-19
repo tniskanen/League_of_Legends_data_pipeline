@@ -35,7 +35,6 @@ send_logs_to_cloudwatch() {
     local log_file="$1"
     local log_group="$2"
     local instance_id="$3"
-    local custom_stream_name="$4"  # New parameter for custom stream name
     
     if [ "${SEND_LOGS_TO_CLOUDWATCH:-false}" != "true" ]; then
         echo "📋 CloudWatch logging disabled, skipping log upload"
@@ -46,22 +45,14 @@ send_logs_to_cloudwatch() {
     echo "🔍 Debug: Log group name: $log_group"
     echo "🔍 Debug: Instance ID: $instance_id"
     
-    # Use custom stream name if provided, otherwise fall back to timestamp format
-    local log_stream
-    if [ -n "$custom_stream_name" ]; then
-        log_stream="$custom_stream_name"
-        echo "📝 Using custom log stream name: $log_stream"
-    else
-        # Create log stream name with timestamp and validated instance ID
-        local timestamp=$(date +%Y%m%d-%H%M%S)
-        log_stream="container-${timestamp}-${instance_id}"
-        echo "📝 Using default timestamp-based log stream name: $log_stream"
-    fi
+    # Create log stream name with timestamp and validated instance ID
+    local timestamp=$(date +%Y%m%d-%H%M%S)
+    local log_stream="container-${timestamp}-${instance_id}"
     
     # Ensure log stream name is valid (no special characters)
     log_stream=$(echo "$log_stream" | sed 's/[^a-zA-Z0-9_-]//g')
     
-    echo "📝 Final log stream name: $log_stream"
+    echo "📝 Creating log stream: $log_stream"
     
     # Check if log group exists, create if not
     echo "📝 Checking if CloudWatch log group exists: $log_group"
