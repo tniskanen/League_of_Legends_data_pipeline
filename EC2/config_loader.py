@@ -9,5 +9,6 @@ def load_config():
         "source": os.environ.get("source", 'prod'),
         "API_KEY": os.environ.get("API_KEY"),
         "BUCKET": os.environ.get("BUCKET"),
-        "API_KEY_EXPIRATION": os.environ.get("API_KEY_EXPIRATION")
+        "API_KEY_EXPIRATION": os.environ.get("API_KEY_EXPIRATION"),
+        "data_collection_type": os.environ.get("data_collection_type", "match_timeline")
     }

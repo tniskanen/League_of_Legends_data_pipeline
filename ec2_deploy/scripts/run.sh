@@ -116,6 +116,7 @@ load_environment_vars() {
     export SEND_LOGS_TO_CLOUDWATCH="${SEND_LOGS_TO_CLOUDWATCH:-true}"
     export CLOUDWATCH_LOG_GROUP="${CLOUDWATCH_LOG_GROUP:-/aws/ec2/containers/default}"
     export CLOUDWATCH_RETENTION_DAYS="${CLOUDWATCH_RETENTION_DAYS:-7}"
+    export DATA_COLLECTION_TYPE="${DATA_COLLECTION_TYPE:-match_timeline}"
     
     echo "🔐 Loading sensitive variables from SSM..."
 
@@ -326,6 +327,7 @@ setup_container_params() {
     ENV_VARS="${ENV_VARS} -e end_epoch=${end_epoch}"
     ENV_VARS="${ENV_VARS} -e API_KEY=${API_KEY}"
     ENV_VARS="${ENV_VARS} -e API_KEY_EXPIRATION=${API_KEY_EXPIRATION}"
+    ENV_VARS="${ENV_VARS} -e data_collection_type=${DATA_COLLECTION_TYPE}"
 
 
     

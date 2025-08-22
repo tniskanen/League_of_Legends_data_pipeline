@@ -9,8 +9,8 @@ try:
     print("Testing imports...")
     import mysql.connector
     from Utils.sql import insert_data_to_mysql, ensure_healthy_connection, format_error_response
-    from Utils.json import flatten_json, flatten_perks
-    from Utils.S3 import get_parameter_from_ssm
+    from Utils.json import flatten_json, flatten_perks, flatten_participant_frames
+    from Utils.S3 import get_parameter_from_ssm, send_timeline_events_json
     from Utils.logger import get_logger
     print("✅ All imports successful")
 except ImportError as e:
@@ -106,6 +106,97 @@ def lambda_handler(event, context):
             all_data = flattened_players
             print(f"Created {len(all_data)} flattened players")
             logger.info(f"📋 Processing {len(all_data)} ranked players")
+        
+        elif "match_timelines" in decoded_fileKey:
+            print("Processing match-timelines data")
+            table = "timeline_data"
+            print(f"Table set to: {table}")
+            logger.info(f"📊 Processing match-timelines data for table: {table}")
+            
+            all_data = []
+            print(f"Found {len(data['matches'])} matches to process")
+            logger.info(f"📋 Processing {len(data['matches'])} matches...")
+
+            games_processed = 0
+            while data['matches']:
+                game = data['matches'].pop(0)
+                games_processed += 1
+                events = []
+                participant_frames = []
+                
+                # Safely get real_timestamp, with fallback
+                try:
+                    real_timestamp = game['info']['frames'][0]['events'][0]["realTimestamp"]
+                except (IndexError, KeyError):
+                    # Fallback to current time if no events or realTimestamp
+                    real_timestamp = int(time.time())
+                    logger.warning(f"⚠️ No realTimestamp found for match {game['metadata']['matchId']}, using current time")
+
+                #dictionary for participant ids
+                lookup = {p['participantId']: p['puuid'] for p in game['info']['participants']}
+                match_id = game['metadata']['matchId']
+                
+                for frame in game['info']['frames']:
+                    
+                    timestamp = frame['timestamp']
+
+                    events.extend(frame['events'])
+
+                    for key, player in frame['participantFrames'].items():
+                        temp_player = flatten_participant_frames(player)
+                        temp_player['participantId'] = key
+                        temp_player['puuid'] = lookup[key]
+                        temp_player['timestamp'] = timestamp
+                        temp_player['matchId'] = match_id
+                        participant_frames.append(temp_player)
+                    
+                all_data.extend(participant_frames)
+
+                events.extend(game['info']['participants'])
+                events.append(game['info']['endOfGameResult'])
+                events.append(game['info']['frameInterval'])
+                events.append(game['metadata']['matchId'])
+
+                # Upload timeline events to S3
+                try:
+                    # Get the bucket name from environment or use a default
+                    timeline_bucket = bucket  # Use the same bucket as the source file
+                    
+                    # Upload events with date-based folder structure
+                    upload_thread = send_timeline_events_json(
+                        events_data=events,
+                        match_id=match_id,
+                        bucket=timeline_bucket,
+                        real_timestamp=real_timestamp,
+                        source=None  # Set to 'test' if you want test prefix
+                    )
+                    
+                    if upload_thread:
+                        logger.info(f"📤 Queued timeline events upload for match {match_id}")
+                        print(f"📤 Queued timeline events upload for match {match_id}")
+                    else:
+                        logger.warning(f"⚠️ Failed to queue timeline events upload for match {match_id}")
+                        print(f"⚠️ Failed to queue timeline events upload for match {match_id}")
+                        
+                except Exception as e:
+                    logger.error(f"❌ Error uploading timeline events for match {match_id}: {e}")
+                    print(f"❌ Error uploading timeline events for match {match_id}: {e}")
+                    # Continue processing other matches even if one fails
+                
+                # Clear events from memory after upload
+                events = None
+                
+                # Monitor memory every 100 games
+                if games_processed % 100 == 0:
+                    print(f"Progress: {games_processed} games processed")
+                    print(f"Games remaining: {len(data['matches'])}, Participant frames processed: {len(all_data)}")
+                    print("---")
+            
+            # Final summary for timeline processing
+            print(f"Timeline processing complete: {games_processed} games processed")
+            print(f"Total participant frames: {len(all_data)}")
+            print(f"Timeline events uploaded to S3 for each match")
+            logger.info(f"📊 Timeline processing complete: {games_processed} games, {len(all_data)} participant frames")
 
         else:
             print("Processing matches data")

@@ -54,7 +54,7 @@ def upload_to_s3(bucket, key, data):
         traceback.print_exc()
         raise
 
-def send_match_json(data, bucket, custom_date=None, source=None):
+def send_match_json(data, bucket, custom_date=None, source=None, data_collection_type=None):
     """
     Upload JSON to S3 with date-based folder structure
     
@@ -63,6 +63,7 @@ def send_match_json(data, bucket, custom_date=None, source=None):
         bucket: S3 bucket name
         custom_date: Optional datetime object, defaults to current UTC time
         source: Optional source string, if 'test' it will be added to the beginning of the S3 key
+        data_collection_type: Optional string, if 'match_timeline' it will use 'match_timelines' in the key, otherwise 'matches'
     """
     if not data:
         return None
@@ -98,10 +99,14 @@ def send_match_json(data, bucket, custom_date=None, source=None):
 
     # Create base key structure with timestamp information
     timestamp = upload_date.strftime('%Y%m%d_%H%M%S')
+    
+    # Determine the collection type suffix for the key
+    collection_suffix = "match_timelines" if data_collection_type == "match_timeline" else "matches"
+    
     if source == 'test':
-        s3_key_hive = f"matches/year={year}/month={month}/day={day}/test_batch_{timestamp}_{match_count}_matches.json"
+        s3_key_hive = f"{collection_suffix}/year={year}/month={month}/day={day}/test_batch_{timestamp}_{match_count}_{collection_suffix}.json"
     else:
-        s3_key_hive = f"matches/year={year}/month={month}/day={day}/batch_{timestamp}_{match_count}_matches.json"
+        s3_key_hive = f"{collection_suffix}/year={year}/month={month}/day={day}/batch_{timestamp}_{match_count}_{collection_suffix}.json"
     
     s3_key = s3_key_hive
 
@@ -111,7 +116,8 @@ def send_match_json(data, bucket, custom_date=None, source=None):
             'upload_timestamp': upload_date.isoformat(),
             'match_count': match_count,
             'batch_id': f"{year}{month}{day}_{timestamp}",
-            's3_key': s3_key
+            's3_key': s3_key,
+            'data_collection_type': data_collection_type or 'match'
         },
         'matches': data_copy
     }
@@ -124,6 +130,90 @@ def send_match_json(data, bucket, custom_date=None, source=None):
     upload_thread.start()
 
     print(f"Queued upload: {match_count} matches -> {s3_key}")
+    return upload_thread
+
+def send_timeline_events_json(events_data, match_id, bucket, real_timestamp, source=None):
+    """
+    Upload timeline events JSON to S3 with date-based folder structure
+    
+    Args:
+        events_data: The events data to upload
+        match_id: The unique match ID for the filename
+        bucket: S3 bucket name
+        real_timestamp: The real timestamp from the game data (used for date calculation)
+        source: Optional source string, if 'test' it will be added to the beginning of the S3 key
+    """
+    if not events_data:
+        return None
+        
+    # Create a deep copy to avoid shared state
+    events_copy = json.loads(json.dumps(events_data))
+    
+    # Convert real_timestamp to datetime for folder structure
+    try:
+        # real_timestamp is typically in milliseconds, convert to seconds first
+        if isinstance(real_timestamp, (int, float)) and real_timestamp > 1e10:  # Likely milliseconds
+            real_timestamp = real_timestamp / 1000
+        
+        # Convert to datetime
+        if isinstance(real_timestamp, (int, float)):
+            upload_date = datetime.fromtimestamp(real_timestamp, tz=timezone.utc)
+        elif isinstance(real_timestamp, str):
+            # Try to parse as ISO format
+            try:
+                upload_date = datetime.fromisoformat(real_timestamp.replace('Z', '+00:00'))
+            except ValueError:
+                # Try to parse as timestamp
+                try:
+                    ts = float(real_timestamp)
+                    if ts > 1e10:  # Likely milliseconds
+                        ts = ts / 1000
+                    upload_date = datetime.fromtimestamp(ts, tz=timezone.utc)
+                except ValueError:
+                    print(f"⚠️ Warning: Could not parse real_timestamp '{real_timestamp}', using current time")
+                    upload_date = datetime.now(timezone.utc)
+        else:
+            upload_date = datetime.now(timezone.utc)
+    except Exception as e:
+        print(f"⚠️ Warning: Error parsing real_timestamp '{real_timestamp}': {e}, using current time")
+        upload_date = datetime.now(timezone.utc)
+    
+    # Ensure upload_date is timezone-aware
+    if upload_date.tzinfo is None:
+        upload_date = upload_date.replace(tzinfo=timezone.utc)
+    
+    # Create date-based folder structure
+    year = upload_date.strftime('%Y')
+    month = upload_date.strftime('%m')
+    day = upload_date.strftime('%d')
+    
+    # Create the S3 key with timeline-events folder structure
+    if source == 'test':
+        s3_key = f"timeline-events/year={year}/month={month}/day={day}/test_{match_id}_events.json"
+    else:
+        s3_key = f"timeline-events/year={year}/month={month}/day={day}/{match_id}_events.json"
+
+    # Enhance the JSON with metadata
+    enhanced_data = {
+        'metadata': {
+            'match_id': match_id,
+            'upload_timestamp': upload_date.isoformat(),
+            'event_count': len(events_copy),
+            'real_timestamp': real_timestamp,
+            's3_key': s3_key,
+            'data_collection_type': 'timeline_events'
+        },
+        'events': events_copy
+    }
+    
+    # Start upload on new thread (upload_to_s3 will handle json.dumps)
+    upload_thread = threading.Thread(
+        target=upload_to_s3, 
+        args=(bucket, s3_key, enhanced_data)
+    )
+    upload_thread.start()
+
+    print(f"Queued timeline events upload: {len(events_copy)} events for match {match_id} -> {s3_key}")
     return upload_thread
 
 def get_parameter_from_ssm(parameter_name):

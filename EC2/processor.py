@@ -4,7 +4,7 @@ import psutil
 
 try:
     print("Testing imports...")
-    from Utils.api import match, handle_api_response
+    from Utils.api import match, match_timeline, handle_api_response
     from Utils.S3 import send_match_json, pull_s3_object, upload_to_s3, alter_s3_file
     from Utils.logger import get_logger
     logger = get_logger(__name__)
@@ -82,6 +82,13 @@ def run_processor(config, matchlist):
     active_threads = []
     current_index = 0  # Track current position for leftover handling
 
+    data_collection_type = config['data_collection_type']
+
+    if data_collection_type == "match_timeline":
+        func = match_timeline
+    else:
+        func = match
+
     try:
         for i, match_id in enumerate(uniqueMatches):
             current_index = i  # Update current position
@@ -95,9 +102,9 @@ def run_processor(config, matchlist):
                 unprocessed_matches = list(uniqueMatches)[i + 1:]
                 print(f"Saving {len(unprocessed_matches)} unprocessed matches to S3...")
                 
-                # Create data to upload with unprocessed matches and player rank map
+                # Create data to upload with unprocessed matches and data collection type
                 data_to_upload = {
-                    "ranked_map": player_rank_map,
+                    "data_collection_type": data_collection_type,
                     "matchlist": unprocessed_matches
                 }
                 
@@ -113,23 +120,10 @@ def run_processor(config, matchlist):
             if i % 1000 == 0:
                 print(f"  Progress: {i}/{len(uniqueMatches)} matches processed")
                 
-            temp_data = match(match_id, config['API_KEY'])
+            temp_data = func(match_id, config['API_KEY'])
             if handle_api_response(temp_data, func_name='match') is None:
                 no_data += 1
                 continue
-                
-            for participant in temp_data['info']['participants']:
-                puuid = participant.get('puuid')
-
-                rank_info = player_rank_map.get(puuid)
-                if rank_info:
-                    participant['tier'] = rank_info['tier']
-                    participant['player_rank'] = rank_info['player_rank']
-                    participant['leaguePoints'] = rank_info['leaguePoints']
-                else:
-                    participant['tier'] = 'UNKNOWN'
-                    participant['player_rank'] = None
-                    participant['leaguePoints'] = None
 
             temp_data['source'] = config['source']
             matches.append(temp_data)
@@ -139,7 +133,7 @@ def run_processor(config, matchlist):
             # Upload every 500 successful matches
             if successful_matches % 500 == 0:
                 print(f"Uploading batch of {successful_matches} matches to S3 (total processed: {total})")
-                thread = send_match_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'])  # Explicit copy
+                thread = send_match_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'], data_collection_type=data_collection_type)  # Explicit copy
                 if thread:
                     active_threads.append(thread)
                 matches = []
@@ -155,9 +149,9 @@ def run_processor(config, matchlist):
         unprocessed_matches = list(uniqueMatches)[current_index + 1:] if current_index < len(uniqueMatches) - 1 else []
         print(f"⚠️ Error occurred during processing. Saving {len(unprocessed_matches)} unprocessed matches to S3...")
         
-        # Create data to upload with unprocessed matches and player rank map
+        # Create data to upload with unprocessed matches and data collection type
         data_to_upload = {
-            "ranked_map": player_rank_map,
+            "data_collection_type": data_collection_type,
             "matchlist": unprocessed_matches
         }
         
@@ -169,7 +163,7 @@ def run_processor(config, matchlist):
     # Upload remaining matches
     if matches:
         print(f"Uploading final batch of {len(matches)} matches")
-        thread = send_match_json(data=matches, bucket=config['BUCKET'], source=config['source'])
+        thread = send_match_json(data=matches, bucket=config['BUCKET'], source=config['source'], data_collection_type=data_collection_type)
         if thread:
             active_threads.append(thread)
 

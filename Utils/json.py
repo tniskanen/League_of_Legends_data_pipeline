@@ -52,6 +52,22 @@ def flatten_perks(perks):
     
     return (flatten_json(out))
 
+def flatten_participant_frames(frame):
+    
+    championStats = frame['championStats'].copy()
+    frame.pop('championStats')
+    frame.update(championStats)
+
+    damageStats = frame['damageStats'].copy()
+    frame.pop('damageStats')
+    frame.update(damageStats)
+
+    position = flatten_json(frame['position'])
+    frame.pop('position')
+    frame.update(position)
+
+    return frame
+
 def split_json(flat_dict):
     legendaryItems = {}
     challenges = {}

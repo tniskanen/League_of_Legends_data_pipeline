@@ -4,7 +4,7 @@ import psutil
 
 try:
     print("Testing imports...")
-    from Utils.api import match, handle_api_response
+    from Utils.api import match, match_timeline, handle_api_response
     from Utils.S3 import send_match_json, pull_s3_object, alter_s3_file, check_files
     from Utils.logger import get_logger
     logger = get_logger(__name__)
@@ -41,9 +41,15 @@ def run_leftovers(config):
         if api_expired:  # Skip remaining leftovers if API expired
             print(f"⚠️ Skipping {leftover} due to API key expiration")
             continue
-        matchlist_data = pull_s3_object(config['BUCKET'], leftover) 
-        uniqueMatches = matchlist_data['matchlist']
-        player_rank_map = matchlist_data['ranked_map']
+        leftover_data = pull_s3_object(config['BUCKET'], leftover) 
+        uniqueMatches = leftover_data['matchlist']
+        leftover_data_collection_type = leftover_data['data_collection_type']
+        
+        # Set function based on leftover's data collection type
+        if leftover_data_collection_type == "match_timeline":
+            func = match_timeline
+        else:
+            func = match
 
         print(f"Starting data processing at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
@@ -66,9 +72,9 @@ def run_leftovers(config):
                     unprocessed_matches = list(uniqueMatches)[i + 1:]
                     print(f"Saving {len(unprocessed_matches)} unprocessed matches to S3...")
                     
-                    # Create data to upload with unprocessed matches and player rank map
+                    # Create data to upload with unprocessed matches and data collection type
                     data_to_upload = {
-                        "ranked_map": player_rank_map,
+                        "data_collection_type": leftover_data_collection_type,
                         "matchlist": unprocessed_matches
                     }
                     
@@ -85,23 +91,10 @@ def run_leftovers(config):
                 if i % 100 == 0:
                     print(f"  Progress: {i}/{len(uniqueMatches)} matches processed")
                     
-                temp_data = match(match_id, config['API_KEY'])
+                temp_data = func(match_id, config['API_KEY'])
                 if handle_api_response(temp_data, func_name='match') is None:
                     no_data += 1
                     continue
-                    
-                for participant in temp_data['info']['participants']:
-                    puuid = participant.get('puuid')
-
-                    rank_info = player_rank_map.get(puuid)
-                if rank_info:
-                    participant['tier'] = rank_info['tier']
-                    participant['player_rank'] = rank_info['player_rank']
-                    participant['leaguePoints'] = rank_info['leaguePoints']
-                else:
-                    participant['tier'] = 'UNKNOWN'
-                    participant['player_rank'] = None
-                    participant['leaguePoints'] = None
 
                 temp_data['source'] = config['source']
                 matches.append(temp_data)
@@ -111,7 +104,7 @@ def run_leftovers(config):
                 # Upload every 500 successful matches
                 if successful_matches % 500 == 0:
                     print(f"Uploading batch of {successful_matches} matches to S3 (total processed: {total})")
-                    thread = send_match_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'])  # Explicit copy
+                    thread = send_match_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'], data_collection_type=leftover_data_collection_type)  # Explicit copy
                     if thread:
                         active_threads.append(thread)
                     matches = []
@@ -124,9 +117,9 @@ def run_leftovers(config):
                 unprocessed_matches = list(uniqueMatches)[current_index + 1:]
                 print(f"⚠️ Error occurred during processing. Saving {len(unprocessed_matches)} unprocessed matches to S3...")
                 
-                # Create data to upload with unprocessed matches and player rank map
+                # Create data to upload with unprocessed matches and data collection type
                 data_to_upload = {
-                    "ranked_map": player_rank_map,
+                    "data_collection_type": leftover_data_collection_type,
                     "matchlist": unprocessed_matches
                 }
                 
@@ -138,7 +131,7 @@ def run_leftovers(config):
         # Upload remaining matches
         if matches:
             print(f"Uploading final batch of {len(matches)} matches")
-            thread = send_match_json(data=matches, bucket=config['BUCKET'], source=config['source'])
+            thread = send_match_json(data=matches, bucket=config['BUCKET'], source=config['source'], data_collection_type=leftover_data_collection_type)
             if thread:
                 active_threads.append(thread)
 

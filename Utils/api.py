@@ -123,6 +123,11 @@ def match(match_id: str, key: str, retries: int = 3) -> Optional[Dict]:
     url = f'https://americas.api.riotgames.com/lol/match/v5/matches/{match_id}?api_key={key}'
     return make_api_request_with_smart_backoff(url, retries)
 
+def match_timeline(match_id: str, key: str, retries: int = 3) -> Optional[Dict]:
+    """Enhanced match with smart rate limiting"""
+    url = f'https://americas.api.riotgames.com/lol/match/v5/matches/{match_id}/timeline?api_key={key}'
+    return make_api_request_with_smart_backoff(url, retries)
+
 # Example with even more advanced features
 class AdvancedRateLimiter:
     def __init__(self):
