@@ -106,7 +106,6 @@ def run_processor(config, matchlist):
         print(f"🔄 DEBUG: Starting main processing loop with {len(uniqueMatches)} matches...")
         for i, match_id in enumerate(uniqueMatches):
             current_index = i  # Update current position
-            print(f"🔍 DEBUG: Processing match {i+1}/{len(uniqueMatches)}: {match_id}")
             
             # Check API key expiration before processing each match
             current_time = int(time.time())
@@ -136,22 +135,16 @@ def run_processor(config, matchlist):
             if i % 1000 == 0:
                 print(f"  Progress: {i}/{len(uniqueMatches)} matches processed")
                 
-            print(f"🔍 DEBUG: About to call function for match {match_id}...")
             temp_data = FUNCTION_MAP[data_collection_type](match_id, config['API_KEY'])
-            print(f"🔍 DEBUG: Function call completed for {match_id}")
             
-            print(f"🔍 DEBUG: About to call handle_api_response for {match_id}...")
             if handle_api_response(temp_data, func_name='match') is None:
-                print(f"🔍 DEBUG: handle_api_response returned None for {match_id}")
                 no_data += 1
                 continue
 
-            print(f"🔍 DEBUG: Adding match {match_id} to matches list...")
             temp_data['source'] = config['source']
             matches.append(temp_data)
             successful_matches += 1
             total += 1
-            print(f"🔍 DEBUG: Match {match_id} added successfully. Total: {total}")
 
             # Upload every 500 successful matches
             if successful_matches % 500 == 0:
