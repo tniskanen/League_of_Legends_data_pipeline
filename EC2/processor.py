@@ -4,7 +4,7 @@ import psutil
 
 try:
     print("Testing imports...")
-    from Utils.api import match, match_timeline, handle_api_response
+    from Utils.api import match, match_timeline, handle_api_response, process_match_timeline, process_match
     from Utils.S3 import send_match_json, pull_s3_object, upload_to_s3, alter_s3_file
     from Utils.logger import get_logger
     logger = get_logger(__name__)
@@ -63,8 +63,12 @@ def run_processor(config, matchlist):
     uniqueMatches = matchlist_data['matchlist']
     player_rank_map = matchlist_data['ranked_map']
 
+    print(f"🔍 DEBUG: Found {len(uniqueMatches)} matches to process")
+    print(f"🔍 DEBUG: Data collection type: {config.get('data_collection_type', 'NOT_SET')}")
+
     #uploading matchlist to s3
     try:
+        print(f"📤 DEBUG: Starting player-map upload...")
         pm_key = f'player-maps/player-map_{config["start_epoch"]}_{config["end_epoch"]}_.json'
         upload_to_s3(config['BUCKET'], pm_key, player_rank_map)
         print(f"✅ player-map uploaded to: {pm_key}")
@@ -84,14 +88,26 @@ def run_processor(config, matchlist):
 
     data_collection_type = config['data_collection_type']
 
-    if data_collection_type == "match_timeline":
-        func = match_timeline
-    else:
-        func = match
+    # Function mapping dictionary
+    FUNCTION_MAP = {
+        "match_timeline": process_match_timeline,
+        "match": process_match
+    }
+
+    # Validate data collection type
+    if data_collection_type not in FUNCTION_MAP:
+        print(f"❌ ERROR: Invalid data_collection_type: {data_collection_type}")
+        print(f"❌ Valid options: {list(FUNCTION_MAP.keys())}")
+        sys.exit(1)
+
+    print(f"✅ DEBUG: Using function: {FUNCTION_MAP[data_collection_type].__name__}")
 
     try:
+        print(f"🔄 DEBUG: Starting main processing loop with {len(uniqueMatches)} matches...")
         for i, match_id in enumerate(uniqueMatches):
             current_index = i  # Update current position
+            print(f"🔍 DEBUG: Processing match {i+1}/{len(uniqueMatches)}: {match_id}")
+            
             # Check API key expiration before processing each match
             current_time = int(time.time())
             if current_time >= int(config['API_KEY_EXPIRATION']):
@@ -120,15 +136,22 @@ def run_processor(config, matchlist):
             if i % 1000 == 0:
                 print(f"  Progress: {i}/{len(uniqueMatches)} matches processed")
                 
-            temp_data = func(match_id, config['API_KEY'])
+            print(f"🔍 DEBUG: About to call function for match {match_id}...")
+            temp_data = FUNCTION_MAP[data_collection_type](match_id, config['API_KEY'])
+            print(f"🔍 DEBUG: Function call completed for {match_id}")
+            
+            print(f"🔍 DEBUG: About to call handle_api_response for {match_id}...")
             if handle_api_response(temp_data, func_name='match') is None:
+                print(f"🔍 DEBUG: handle_api_response returned None for {match_id}")
                 no_data += 1
                 continue
 
+            print(f"🔍 DEBUG: Adding match {match_id} to matches list...")
             temp_data['source'] = config['source']
             matches.append(temp_data)
             successful_matches += 1
             total += 1
+            print(f"🔍 DEBUG: Match {match_id} added successfully. Total: {total}")
 
             # Upload every 500 successful matches
             if successful_matches % 500 == 0:
@@ -160,23 +183,32 @@ def run_processor(config, matchlist):
         upload_to_s3(config['BUCKET'], key, data_to_upload)
         print(f"✅ Unprocessed matches saved to: {key}")
 
+    print(f"🔍 DEBUG: Main processing loop completed. successful_matches: {successful_matches}, total: {total}")
+
     # Upload remaining matches
     if matches:
-        print(f"Uploading final batch of {len(matches)} matches")
+        print(f"🔍 DEBUG: Uploading final batch of {len(matches)} matches...")
         thread = send_match_json(data=matches, bucket=config['BUCKET'], source=config['source'], data_collection_type=data_collection_type)
         if thread:
             active_threads.append(thread)
+        print(f"🔍 DEBUG: Final batch upload thread created")
+    else:
+        print(f"🔍 DEBUG: No final batch to upload (matches list is empty)")
 
     # Wait for all uploads
+    print(f"🔍 DEBUG: About to wait for {len(active_threads)} upload threads...")
     print(f"Waiting for {len(active_threads)} upload threads to complete...")
     for i, thread in enumerate(active_threads):
+        print(f"🔍 DEBUG: Waiting for upload thread {i+1}/{len(active_threads)}...")
         print(f"  Waiting for upload thread {i+1}/{len(active_threads)}")
         thread.join()
+        print(f"🔍 DEBUG: Upload thread {i+1} completed")
 
     print("All uploads completed!")
     print(f"Matches with no data: {no_data}")
 
     # Always delete matchlist - it's either fully processed or stored in leftovers
+    print(f"🔍 DEBUG: About to delete matchlist...")
     alter_s3_file(config['BUCKET'], matchlist, 'delete')
     print(f"✅ Matchlist deleted from S3")
     
