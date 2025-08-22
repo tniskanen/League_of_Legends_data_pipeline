@@ -104,9 +104,9 @@ def send_match_json(data, bucket, custom_date=None, source=None, data_collection
     collection_suffix = "match_timelines" if data_collection_type == "match_timeline" else "matches"
     
     if source == 'test':
-        s3_key_hive = f"{collection_suffix}/year={year}/month={month}/day={day}/test_batch_{timestamp}_{match_count}_{collection_suffix}.json"
+        s3_key_hive = f"matches/year={year}/month={month}/day={day}/test_batch_{timestamp}_{match_count}_{collection_suffix}.json"
     else:
-        s3_key_hive = f"{collection_suffix}/year={year}/month={month}/day={day}/batch_{timestamp}_{match_count}_{collection_suffix}.json"
+        s3_key_hive = f"matches/year={year}/month={month}/day={day}/batch_{timestamp}_{match_count}_{collection_suffix}.json"
     
     s3_key = s3_key_hive
 
