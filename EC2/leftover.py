@@ -26,6 +26,12 @@ def run_leftovers(config):
     print(f"🚀 Running {__name__}.py")
     print(f"Python version: {sys.version}")
 
+    # Skip execution if in test mode
+    if config.get('source') == 'test':
+        print(f"🧪 Test mode detected - skipping {__name__}.py execution")
+        print(f"📋 This prevents processing thousands of leftovers during development")
+        return
+
     start_time = time.time()
     start_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
 
