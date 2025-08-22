@@ -210,21 +210,13 @@ def handle_api_response(response, func_name, player_id=None):
         return response
 
 def process_match_timeline(match_id, api_key):
-    """Process a single match timeline with debugging"""
-    print(f"🔍 DEBUG: Processing match_timeline for {match_id}")
+    """Process a single match timeline"""
     result = match_timeline(match_id, api_key)
-    print(f"🔍 DEBUG: match_timeline result type: {type(result)}")
-    if result is None:
-        print(f"🔍 DEBUG: match_timeline returned None for {match_id}")
     return result
 
 def process_match(match_id, api_key):
-    """Process a single match with debugging"""
-    print(f"🔍 DEBUG: Processing match for {match_id}")
+    """Process a single match"""
     result = match(match_id, api_key)
-    print(f"🔍 DEBUG: match result type: {type(result)}")
-    if result is None:
-        print(f"🔍 DEBUG: match returned None for {match_id}")
     return result
     
 def champion_mastery(puuid, championid, key, retries=3):
