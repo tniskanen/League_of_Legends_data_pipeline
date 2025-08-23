@@ -142,13 +142,13 @@ def lambda_handler(event, context):
 
                     events.extend(frame['events'])
 
-                    for key, player in frame['participantFrames'].items():
-                        temp_player = flatten_participant_frames(player)
-                        temp_player['participantId'] = key
-                        temp_player['puuid'] = lookup[key]
-                        temp_player['timestamp'] = timestamp
-                        temp_player['matchId'] = match_id
-                        participant_frames.append(temp_player)
+                for key, player in frame['participantFrames'].items():
+                    temp_player = flatten_participant_frames(player)
+                    temp_player['participantId'] = key
+                    temp_player['puuid'] = lookup[int(key)]  # Convert string key to int for lookup
+                    temp_player['timestamp'] = timestamp
+                    temp_player['matchId'] = match_id
+                    participant_frames.append(temp_player)
                     
                 all_data.extend(participant_frames)
 
