@@ -5,8 +5,8 @@ from Utils.json import flatten_json
 
 
 new_window = {
-    'start_epoch': 1752321600,
-    'end_epoch': 1752667200
+    'start_epoch': 1753704000,
+    'end_epoch': 1753876800
 }
 
 bucket = 'lol-match-jsons'
