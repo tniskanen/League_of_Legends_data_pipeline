@@ -148,6 +148,8 @@ def lambda_handler(event, context):
                     temp_player['puuid'] = lookup[int(key)]  # Convert string key to int for lookup
                     temp_player['timestamp'] = timestamp
                     temp_player['matchId'] = match_id
+                    temp_player['realTimestamp'] = real_timestamp
+                    temp_player['endOfGameResult'] = game['info']['endOfGameResult']
                     participant_frames.append(temp_player)
                     
                 all_data.extend(participant_frames)
@@ -155,6 +157,7 @@ def lambda_handler(event, context):
                 events.extend(game['info']['participants'])
                 events.append(game['info']['endOfGameResult'])
                 events.append(game['info']['frameInterval'])
+                events.append(real_timestamp)
                 events.append(game['metadata']['matchId'])
 
                 # Upload timeline events to S3
