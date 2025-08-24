@@ -107,8 +107,8 @@ def run_processor(config, matchlist):
         for i, match_id in enumerate(uniqueMatches):
             current_index = i  # Update current position
             
-            # Memory monitoring every 10 matches
-            if i % 10 == 0:
+            # Memory monitoring every 500 matches (reduced from every 10)
+            if i % 500 == 0:
                 current_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
                 print(f"🔍 Memory check: {current_memory:.2f} MB (match {i+1}/{len(uniqueMatches)})")
             
@@ -153,9 +153,7 @@ def run_processor(config, matchlist):
 
             # Upload every 50 successful matches (reduced from 500)
             if successful_matches % 50 == 0:
-                current_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
                 print(f"📤 Uploading batch of {successful_matches} matches to S3 (total processed: {total})")
-                print(f"🔍 Memory before upload: {current_memory:.2f} MB")
                 
                 thread = send_match_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'], data_collection_type=data_collection_type)  # Explicit copy
                 if thread:
@@ -163,13 +161,9 @@ def run_processor(config, matchlist):
                 
                 matches = []  # Clear memory immediately
                 
-                # Force garbage collection and check memory after clearing
+                # Force garbage collection (memory clearing logic kept)
                 import gc
                 gc.collect()
-                after_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
-                memory_freed = current_memory - after_memory
-                print(f"✅ Memory after upload: {after_memory:.2f} MB (freed: {memory_freed:.2f} MB)")
-                print(f"🧹 Batch upload completed and memory cleared")
 
     except Exception as e:
         print(f"❌ ERROR during match processing: {e}")
@@ -195,51 +189,32 @@ def run_processor(config, matchlist):
 
     print(f"🔍 DEBUG: Main processing loop completed. successful_matches: {successful_matches}, total: {total}")
 
-    # Memory check before final upload
-    current_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
-    print(f"🔍 Memory before final upload: {current_memory:.2f} MB")
-
     # Upload remaining matches
     if matches:
-        print(f"🔍 DEBUG: Uploading final batch of {len(matches)} matches...")
+        print(f"📤 Uploading final batch of {len(matches)} matches...")
         thread = send_match_json(data=matches, bucket=config['BUCKET'], source=config['source'], data_collection_type=data_collection_type)
         if thread:
             active_threads.append(thread)
-        print(f"🔍 DEBUG: Final batch upload thread created")
+        print(f"✅ Final batch upload thread created")
         
         # Clear matches after final upload
         matches = []
         import gc
         gc.collect()
-        after_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
-        memory_freed = current_memory - after_memory
-        print(f"✅ Memory after final upload: {after_memory:.2f} MB (freed: {memory_freed:.2f} MB)")
     else:
-        print(f"🔍 DEBUG: No final batch to upload (matches list is empty)")
+        print(f"ℹ️ No final batch to upload (matches list is empty)")
 
     # Wait for all uploads
-    print(f"🔍 DEBUG: About to wait for {len(active_threads)} upload threads...")
-    print(f"Waiting for {len(active_threads)} upload threads to complete...")
-    
-    # Memory check before waiting for threads
-    current_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
-    print(f"🔍 Memory before thread wait: {current_memory:.2f} MB")
+    print(f"⏳ Waiting for {len(active_threads)} upload threads to complete...")
     
     for i, thread in enumerate(active_threads):
-        print(f"🔍 DEBUG: Waiting for upload thread {i+1}/{len(active_threads)}...")
-        print(f"  Waiting for upload thread {i+1}/{len(active_threads)}")
         thread.join()
-        print(f"🔍 DEBUG: Upload thread {i+1} completed")
-        
-        # Memory check after each thread completes
-        current_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
-        print(f"🔍 Memory after thread {i+1}: {current_memory:.2f} MB")
+        print(f"✅ Upload thread {i+1}/{len(active_threads)} completed")
 
     print("All uploads completed!")
     print(f"Matches with no data: {no_data}")
 
     # Always delete matchlist - it's either fully processed or stored in leftovers
-    print(f"🔍 DEBUG: About to delete matchlist...")
     alter_s3_file(config['BUCKET'], matchlist, 'delete')
     print(f"✅ Matchlist deleted from S3")
     
