@@ -4,7 +4,7 @@ import psutil
 
 try:
     print("Testing imports...")
-    from Utils.api import match, match_timeline, handle_api_response, process_match_timeline, process_match
+    from Utils.api import match, match_timeline, handle_api_response
     from Utils.S3 import send_match_json, pull_s3_object, upload_to_s3, alter_s3_file
     from Utils.logger import get_logger
     logger = get_logger(__name__)
@@ -65,6 +65,7 @@ def run_processor(config, matchlist):
 
     print(f"🔍 DEBUG: Found {len(uniqueMatches)} matches to process")
     print(f"🔍 DEBUG: Data collection type: {config.get('data_collection_type', 'NOT_SET')}")
+    print(f"📊 Batch configuration: 200 matches, 50 timelines")
 
     #uploading matchlist to s3
     try:
@@ -79,28 +80,16 @@ def run_processor(config, matchlist):
 
     print(f"Starting data processing at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    successful_matches = 0
     total = 0
     no_data = 0
-    matches = []
+    match_data = []
+    timeline_data = []
     active_threads = []
     current_index = 0  # Track current position for leftover handling
-
-    data_collection_type = config['data_collection_type']
-
-    # Function mapping dictionary
-    FUNCTION_MAP = {
-        "match_timeline": process_match_timeline,
-        "match": process_match
-    }
-
-    # Validate data collection type
-    if data_collection_type not in FUNCTION_MAP:
-        print(f"❌ ERROR: Invalid data_collection_type: {data_collection_type}")
-        print(f"❌ Valid options: {list(FUNCTION_MAP.keys())}")
-        sys.exit(1)
-
-    print(f"✅ DEBUG: Using function: {FUNCTION_MAP[data_collection_type].__name__}")
+    
+    # Batch counters for progress tracking
+    match_batch_count = 0
+    timeline_batch_count = 0
 
     try:
         print(f"🔄 DEBUG: Starting main processing loop with {len(uniqueMatches)} matches...")
@@ -124,7 +113,6 @@ def run_processor(config, matchlist):
                 
                 # Create data to upload with unprocessed matches and data collection type
                 data_to_upload = {
-                    "data_collection_type": data_collection_type,
                     "matchlist": unprocessed_matches
                 }
                 
@@ -140,28 +128,49 @@ def run_processor(config, matchlist):
             if i % 1000 == 0:
                 print(f"  Progress: {i}/{len(uniqueMatches)} matches processed")
                 
-            temp_data = FUNCTION_MAP[data_collection_type](match_id, config['API_KEY'])
+            temp_data_match = match(match_id, config['API_KEY'])
+            temp_data_timeline = match_timeline(match_id, config['API_KEY'])
             
-            if handle_api_response(temp_data, func_name='match') is None:
+            if handle_api_response(temp_data_match, func_name='match') is None:
+                no_data += 1
+                continue
+            if handle_api_response(temp_data_timeline, func_name='match_timeline') is None:
                 no_data += 1
                 continue
 
-            temp_data['source'] = config['source']
-            matches.append(temp_data)
-            successful_matches += 1
+            temp_data_match['source'] = config['source']
+            temp_data_timeline['source'] = config['source']
+            match_data.append(temp_data_match)
+            timeline_data.append(temp_data_timeline)
             total += 1
 
-            # Upload every 50 successful matches (reduced from 500)
-            if successful_matches % 50 == 0:
-                print(f"📤 Uploading batch of {successful_matches} matches to S3 (total processed: {total})")
+            # Upload every 50 timeline matches (smaller batch due to larger data size)
+            if len(timeline_data) >= 50:
+                timeline_batch_count += 1
+                print(f"📤 Uploading batch #{timeline_batch_count} of {len(timeline_data)} timeline data to S3 (total processed: {total})")
                 
-                thread = send_match_json(data=matches.copy(), bucket=config['BUCKET'], source=config['source'], data_collection_type=data_collection_type)  # Explicit copy
+                thread = send_match_json(data=timeline_data.copy(), bucket=config['BUCKET'], source=config['source'], data_collection_type="match_timeline")
                 if thread:
                     active_threads.append(thread)
                 
-                matches = []  # Clear memory immediately
+                timeline_data = []  # Clear memory immediately
                 
-                # Force garbage collection (memory clearing logic kept)
+                # Force garbage collection
+                import gc
+                gc.collect()
+            
+            # Upload every 200 regular matches (adjusted batch size)
+            if len(match_data) >= 200:
+                match_batch_count += 1
+                print(f"📤 Uploading batch #{match_batch_count} of {len(match_data)} match data to S3 (total processed: {total})")
+                
+                thread = send_match_json(data=match_data.copy(), bucket=config['BUCKET'], source=config['source'], data_collection_type="match")
+                if thread:
+                    active_threads.append(thread)
+                
+                match_data = []  # Clear memory immediately
+                
+                # Force garbage collection
                 import gc
                 gc.collect()
 
@@ -178,7 +187,6 @@ def run_processor(config, matchlist):
         
         # Create data to upload with unprocessed matches and data collection type
         data_to_upload = {
-            "data_collection_type": data_collection_type,
             "matchlist": unprocessed_matches
         }
         
@@ -187,22 +195,39 @@ def run_processor(config, matchlist):
         upload_to_s3(config['BUCKET'], key, data_to_upload)
         print(f"✅ Unprocessed matches saved to: {key}")
 
-    print(f"🔍 DEBUG: Main processing loop completed. successful_matches: {successful_matches}, total: {total}")
+    print(f"🔍 DEBUG: Main processing loop completed. match_data: {len(match_data)}, timeline_data: {len(timeline_data)}, total: {total}")
 
-    # Upload remaining matches
-    if matches:
-        print(f"📤 Uploading final batch of {len(matches)} matches...")
-        thread = send_match_json(data=matches, bucket=config['BUCKET'], source=config['source'], data_collection_type=data_collection_type)
+    # Upload remaining match data
+    if match_data:
+        match_batch_count += 1
+        print(f"📤 Uploading final batch #{match_batch_count} of {len(match_data)} match data...")
+        thread = send_match_json(data=match_data, bucket=config['BUCKET'], source=config['source'], data_collection_type="match")
         if thread:
             active_threads.append(thread)
-        print(f"✅ Final batch upload thread created")
+        print(f"✅ Final match data batch upload thread created")
         
-        # Clear matches after final upload
-        matches = []
+        # Clear match_data after final upload
+        match_data = []
         import gc
         gc.collect()
     else:
-        print(f"ℹ️ No final batch to upload (matches list is empty)")
+        print(f"ℹ️ No final match data batch to upload (match_data list is empty)")
+
+    # Upload remaining timeline data
+    if timeline_data:
+        timeline_batch_count += 1
+        print(f"📤 Uploading final batch #{timeline_batch_count} of {len(timeline_data)} timeline data...")
+        thread = send_match_json(data=timeline_data, bucket=config['BUCKET'], source=config['source'], data_collection_type="match_timeline")
+        if thread:
+            active_threads.append(thread)
+        print(f"✅ Final timeline data batch upload thread created")
+        
+        # Clear timeline_data after final upload
+        timeline_data = []
+        import gc
+        gc.collect()
+    else:
+        print(f"ℹ️ No final timeline data batch to upload (timeline_data list is empty)")
 
     # Wait for all uploads
     print(f"⏳ Waiting for {len(active_threads)} upload threads to complete...")
@@ -213,6 +238,8 @@ def run_processor(config, matchlist):
 
     print("All uploads completed!")
     print(f"Matches with no data: {no_data}")
+    print(f"Match batches uploaded: {match_batch_count}")
+    print(f"Timeline batches uploaded: {timeline_batch_count}")
 
     # Always delete matchlist - it's either fully processed or stored in leftovers
     alter_s3_file(config['BUCKET'], matchlist, 'delete')
@@ -226,4 +253,5 @@ def run_processor(config, matchlist):
     print(f"Memory usage: {start_memory:.1f}MB -> {end_memory:.1f}MB")
     print(f"Total matches processed: {total}")
     print(f"Upload batches: {len(active_threads)}")
+    print(f"Batch breakdown: {match_batch_count} match batches, {timeline_batch_count} timeline batches")
     return

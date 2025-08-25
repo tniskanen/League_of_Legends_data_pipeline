@@ -30,7 +30,7 @@ def run_fetcher(config):
     low_elo_players = []
     high_elo_players = []
     matchesList = []
-    ranks = ['master', 'grandmaster', 'challenger']  
+    ranks = ['challenger', 'grandmaster', 'master']  
     divisions = ['I', 'II', 'III', 'IV']
     tiers = ['DIAMOND']
 
