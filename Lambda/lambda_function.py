@@ -224,12 +224,25 @@ def lambda_handler(event, context):
                 
                 # Process all players in this game
                 for player_idx, player in enumerate(game['info']['participants']):
+                    # DEBUG: Check enumerate order and player data
+                    print(f"DEBUG: Processing player_idx={player_idx}, player keys: {len(player.keys())}")
+                    
                     # Create a copy to avoid modifying the original
                     player_copy = player.copy()
                     
+                    # DEBUG: Check player_copy keys
+                    print(f"DEBUG: Player {player_idx} - player_copy keys: {len(player_copy.keys())}")
+                    
                     perks = flatten_perks(player_copy['perks'])
                     del player_copy['perks']
+                    
+                    # DEBUG: Check perks keys after flattening
+                    print(f"DEBUG: Player {player_idx} - perks keys after flatten_perks: {len(perks.keys())}")
+                    
                     temp_player = flatten_json(player_copy)
+                    
+                    # DEBUG: Check temp_player keys after flatten_json
+                    print(f"DEBUG: Player {player_idx} - temp_player keys after flatten_json: {len(temp_player.keys())}")
                     
                     # DEBUG: Check what's in each variable
                     print(f"DEBUG: Player {player_idx} - temp_player keys BEFORE update: {list(temp_player.keys())[:10]}...")  # Show first 10 keys
