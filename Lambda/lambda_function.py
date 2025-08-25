@@ -230,7 +230,15 @@ def lambda_handler(event, context):
                     perks = flatten_perks(player_copy['perks'])
                     del player_copy['perks']
                     temp_player = flatten_json(player_copy)
+                    
+                    # DEBUG: Check what's in each variable
+                    print(f"DEBUG: Player {player_idx} - temp_player keys BEFORE update: {list(temp_player.keys())[:10]}...")  # Show first 10 keys
+                    print(f"DEBUG: Player {player_idx} - perks keys: {list(perks.keys())}")
+                    
                     temp_player.update(perks)
+                    
+                    # DEBUG: Check what's in temp_player after update
+                    print(f"DEBUG: Player {player_idx} - temp_player keys AFTER update: {list(temp_player.keys())[:10]}...")  # Show first 10 keys
 
                     #remove challenges_ and missions_ from keys
                     cleaned_player = {}
@@ -242,6 +250,11 @@ def lambda_handler(event, context):
                         else:
                             new_key = key
                         cleaned_player[new_key] = value
+                    
+                    # DEBUG: Check what's in cleaned_player
+                    print(f"DEBUG: Player {player_idx} - cleaned_player keys: {list(cleaned_player.keys())[:10]}...")  # Show first 10 keys
+                    print(f"DEBUG: Player {player_idx} - cleaned_player total keys: {len(cleaned_player)}")
+                    print("---")
 
                     cleaned_player['dataVersion'] = game['metadata']['dataVersion']
                     cleaned_player['matchId'] = game['metadata']['matchId']
