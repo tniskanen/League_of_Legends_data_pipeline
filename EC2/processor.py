@@ -64,7 +64,6 @@ def run_processor(config, matchlist):
     player_rank_map = matchlist_data['ranked_map']
 
     print(f"🔍 DEBUG: Found {len(uniqueMatches)} matches to process")
-    print(f"🔍 DEBUG: Data collection type: {config.get('data_collection_type', 'NOT_SET')}")
     print(f"📊 Batch configuration: 200 matches, 50 timelines")
 
     #uploading matchlist to s3
