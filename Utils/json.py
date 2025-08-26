@@ -24,7 +24,7 @@ def flatten_json(nested_json):
         else:
 
             #not including legendaryItemUsed 
-            if 'legendaryItemUsed' or 'SWARM' or 'playerAugment' or 'playerScore' in path:
+            if any(keyword in path for keyword in ['legendaryItemUsed', 'SWARM', 'playerAugment', 'playerScore']):
                 continue
             else:
                 out["_".join(path)] = current  # Join the path into a string (using underscores) and store the value
