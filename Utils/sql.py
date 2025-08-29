@@ -45,7 +45,11 @@ def insert_data_to_mysql(cursor, table_name, rows):
 # Helper function to infer the datatype of a column based on the value
 def infer_column_data_type(value):
     if isinstance(value, int):
-        return "INT"
+        # Check if the integer value exceeds INT range (-2,147,483,648 to 2,147,483,647)
+        if value > 2147483647 or value < -2147483648:
+            return "BIGINT"
+        else:
+            return "INT"
     elif isinstance(value, float):
         return "DECIMAL(10, 2)"
     elif isinstance(value, str):
